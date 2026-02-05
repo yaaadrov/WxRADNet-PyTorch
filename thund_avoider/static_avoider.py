@@ -8,11 +8,8 @@ import geopandas as gpd
 import networkx as nx
 import pandas as pd
 from shapely.geometry import LineString, Point, Polygon
+from settings import settings
 
-
-BUFFER: int = 5_000  # Additional 5 km buffer
-TOLERANCE: int = 5_000  # Simplification tolerance
-BBOX_BUFFER: int = 50_000  # Additional 50 km buffer for A and B points
 
 ROOT_PATH: Path = Path(__file__).resolve().parents[1]
 DATA_PATH: Path = ROOT_PATH / "data"
@@ -266,8 +263,8 @@ if __name__ == "__main__":
     with open(TIMESTAMPS_PATH, "rb") as file_in:
         timestamps = pickle.load(file_in)
     process_data(
-        buffer=BUFFER,
-        tolerance=TOLERANCE,
-        bbox_buffer=BBOX_BUFFER,
+        buffer=settings.buffer,
+        tolerance=settings.tolerance,
+        bbox_buffer=settings.bbox_buffer,
         timestamps=timestamps,
     )

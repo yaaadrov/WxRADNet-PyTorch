@@ -21,22 +21,11 @@ from scipy.spatial import Delaunay, KDTree
 from shapely import STRtree
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from shapely.ops import substring, unary_union
+from settings import settings
 
 
 WINDOW_SIZE_INITIAL: Final = [1, 2, 3, 4, 5, 6, 7]
 WINDOW_SIZE_FINE_TUNE: Final = [2, 3]
-
-PROJECTED_CRS: Final = CRS(3067)  # ETRS89 / TM35FIN(E,N)
-VELOCITY_KMH: Final = 900  # Velocity in km/hour
-DELTA_MINUTES: Final = 5  # Forecast frequency
-BUFFER: Final = 5_000  # Additional 5 km buffer
-TOLERANCE: Final = 5_000  # Simplification tolerance
-K_NEIGHBORS: Final = 10  # Number of neighbors for master graph
-MAX_DISTANCE: Final = 20_000  # Split each segment into several subsegments for greedy fine-tuning
-SIMPLIFICATION_TOLERANCE: Final = 1e-9  # Tolerance to simplify paths after densifying
-SMOOTH_TOLERANCE: Final = TOLERANCE * 5  # Tolerance for smoothing fine-tuning
-MAX_ITER: Final = 300  # Maximum number of iterations for smooth fine-tuning
-DELTA_LENGTH: Final = 1.0  # Smooth fine-tuning length sensitivity
 
 ROOT_PATH: Path = Path(__file__).resolve().parents[1]
 DATA_PATH: Path = ROOT_PATH / "data"
@@ -1358,17 +1347,17 @@ if __name__ == "__main__":
         ab_points = pickle.load(file_in)
 
     dynamic_avoider = DynamicAvoider(
-        crs=PROJECTED_CRS,
-        velocity_kmh=VELOCITY_KMH,
-        delta_minutes=DELTA_MINUTES,
-        buffer=BUFFER,
-        tolerance=TOLERANCE,
-        k_neighbors=K_NEIGHBORS,
-        max_distance=MAX_DISTANCE,
-        simplification_tolerance=SIMPLIFICATION_TOLERANCE,
-        smooth_tolerance=SMOOTH_TOLERANCE,
-        max_iter=MAX_ITER,
-        delta_length=DELTA_LENGTH,
+        crs=settings.projected_crs,
+        velocity_kmh=settings.velocity_kmh,
+        delta_minutes=settings.delta_minutes,
+        buffer=settings.buffer,
+        tolerance=settings.tolerance,
+        k_neighbors=settings.k_neighbors,
+        max_distance=settings.max_distance,
+        simplification_tolerance=settings.simplification_tolerance,
+        smooth_tolerance=settings.smooth_tolerance,
+        max_iter=settings.max_iter,
+        delta_length=settings.delta_length,
         strategy="concave",
         tuning_strategy="greedy",
     )

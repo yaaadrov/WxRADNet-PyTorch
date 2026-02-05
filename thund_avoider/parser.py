@@ -19,21 +19,17 @@ from shapely.geometry import shape, Polygon, MultiPolygon
 from shapely.ops import unary_union
 import affine
 from concave_hull import concave_hull
+from settings import settings
+
 
 warnings.simplefilter(action="ignore", category=SettingWithCopyWarning)
 warnings.simplefilter(action="ignore", category=UserWarning)
 
+
 ROOT_PATH = Path(__file__).resolve().parents[1]
 DATA_PATH = ROOT_PATH / 'data'
 TIMESTAMPS_PATH = ROOT_PATH / 'config' / 'timestamps.pkl'
-
-BASE_URL = 'http://s3-eu-west-1.amazonaws.com/fmi-opendata-radar-geotiff/{year}/{month}/{day}/FIN-DBZ-3067-250M/{year}{month}{day}{hour}{minute}_FIN-DBZ-3067-250M.tif'
-INTENSITY_THRESHOLD_LOW = 100
-INTENSITY_THRESHOLD_HIGH = 255
-DISTANCE_BETWEEN = 25_000  # Minimum 50 km between two thunderstorms to proceed between
-DISTANCE_AVOID = 15_000  # Minimum 15 km to thunderstorm to circumnavigate
-DELTA_MINUTES = 5
-NUM_ITERATIONS = 25
+NUM_ITERATIONS: float = 25
 
 
 class Parser:
@@ -230,12 +226,12 @@ class Parser:
 
 if __name__ == '__main__':
     parser = Parser(
-        base_url=BASE_URL,
-        intensity_threshold_low=INTENSITY_THRESHOLD_LOW,
-        intensity_threshold_high=INTENSITY_THRESHOLD_HIGH,
-        distance_between=DISTANCE_BETWEEN,
-        distance_avoid=DISTANCE_AVOID,
-        delta_minutes=DELTA_MINUTES,
+        base_url=settings.base_url,
+        intensity_threshold_low=settings.intensity_threshold_low,
+        intensity_threshold_high=settings.intensity_threshold_high,
+        distance_between=settings.distance_between,
+        distance_avoid=settings.distance_avoid,
+        delta_minutes=settings.delta_minutes,
         data_path=DATA_PATH,
     )
     with open(TIMESTAMPS_PATH, 'rb') as file_in:
