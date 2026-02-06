@@ -1,9 +1,9 @@
 import math
 from pathlib import Path
 
-from affine import Affine
 import numpy as np
 import rasterio
+from affine import Affine
 from pydantic import BaseModel
 from rasterio.warp import reproject, Resampling
 from shapely import Point, Polygon, STRtree, MultiPolygon
