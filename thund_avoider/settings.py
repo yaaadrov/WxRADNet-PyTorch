@@ -2,7 +2,6 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-
 ROOT_PATH: Path = Path(__file__).resolve().parents[1]
 DATA_PATH: Path = ROOT_PATH / "data"
 RESULT_PATH: Path = ROOT_PATH / "results"

@@ -1,10 +1,11 @@
-import os
-import numpy as np
-import rasterio
-import cv2
 import json
+import os
 from datetime import datetime, timedelta
 from typing import List, Tuple
+
+import cv2
+import numpy as np
+import rasterio
 
 
 def collect_data(input_folder: str) -> None:

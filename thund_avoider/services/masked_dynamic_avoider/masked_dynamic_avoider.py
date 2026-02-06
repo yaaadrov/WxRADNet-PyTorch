@@ -1,8 +1,11 @@
 from pyproj import CRS
 
-from thund_avoider.services.dynamic_avoider import DynamicAvoider
 from thund_avoider.schemas.dynamic_avoider import DynamicAvoiderConfig
-from thund_avoider.services.masked_dynamic_avoider.masked_preprocessor import MaskedPreprocessor, PreprocessorConfig
+from thund_avoider.services.dynamic_avoider import DynamicAvoider
+from thund_avoider.services.masked_dynamic_avoider.masked_preprocessor import (
+    MaskedPreprocessor,
+    PreprocessorConfig,
+)
 
 
 class MaskedDynamicAvoider(DynamicAvoider):

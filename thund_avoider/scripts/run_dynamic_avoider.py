@@ -1,3 +1,4 @@
+import itertools as it
 import os
 import pickle
 import re
@@ -8,12 +9,10 @@ from typing import Final
 import pandas as pd
 from pyproj import CRS
 from shapely import Point, LineString
-import itertools as it
 
-from thund_avoider.services.dynamic_avoider import DynamicAvoider
 from thund_avoider.schemas.dynamic_avoider import SlidingWindowPath, FineTunedPath
+from thund_avoider.services.dynamic_avoider import DynamicAvoider
 from thund_avoider.settings import settings, DATA_PATH, RESULT_PATH, TIMESTAMPS_PATH, AB_POINTS_PATH
-
 
 WINDOW_SIZES: Final = [1, 2, 3, 4, 5, 6, 7]
 

@@ -1,18 +1,18 @@
-import numpy as np
-import pandas as pd
-import networkx as nx
+from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple
-from datetime import datetime
 
+import affine
 import geopandas as gpd
-import shapely
+import networkx as nx
+import numpy as np
+import pandas as pd
 import rasterio
 import rasterio.features
+import shapely
+from concave_hull import concave_hull
 from shapely.geometry import shape, Polygon, MultiPolygon
 from shapely.ops import unary_union
-import affine
-from concave_hull import concave_hull
 
 from thund_avoider.schemas.preprocessor import RasterioCompressionSchema
 
