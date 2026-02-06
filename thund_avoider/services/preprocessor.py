@@ -52,15 +52,6 @@ class Preprocessor:
             minute=f"{current_date.minute:02d}"
         )
 
-    @staticmethod
-    def _fetch_raster_data(url: str | Path) -> tuple[np.ndarray, affine.Affine, rasterio.crs.CRS]:
-        """Fetch data from geotiff image"""
-        with rasterio.open(url) as dataset:
-            band = dataset.read(1)
-            transform = dataset.transform
-            crs = dataset.crs
-        return band, transform, crs
-
     def _apply_mask(self, band: np.ndarray) -> np.ndarray:
         """Apply mask based on intensity threshold"""
         return (band > self.intensity_threshold_low) & (band < self.intensity_threshold_high)
@@ -154,15 +145,24 @@ class Preprocessor:
         gdf_union["concave"] = gdf_union["buffer"].apply(self._concave_from_multipolygon)
         return gdf_union
 
-    @staticmethod
-    def save_raster_from_url(url: str, output_path: Path):
+    def save_raster_from_url(self, current_date: datetime, output_path: Path):
         """Compress and save raster GeoTIFF file from URL"""
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        url = self._generate_url(current_date)
         with rasterio.open(url) as src:
             profile = src.profile
             profile.update(RasterioCompressionSchema().model_dump())
             with rasterio.open(output_path, "w", **profile) as dst:
                 dst.write(src.read())
+
+    @staticmethod
+    def load_raster_data(url: str | Path) -> tuple[np.ndarray, affine.Affine, rasterio.crs.CRS]:
+        """Fetch data from geotiff image"""
+        with rasterio.open(url) as dataset:
+            band = dataset.read(1)
+            transform = dataset.transform
+            crs = dataset.crs
+        return band, transform, crs
 
     @staticmethod
     def save_geodataframe_to_csv(gdf: gpd.GeoDataFrame, file_path: Path) -> None:
@@ -184,7 +184,7 @@ class Preprocessor:
     def get_gpd_for_current_date(self, current_date: datetime) -> gpd.GeoDataFrame:
         """Get gpd.GeoDataFrame for required timestamp"""
         url = self._generate_url(current_date)
-        band, transform, crs = self._fetch_raster_data(url)
+        band, transform, crs = self.load_raster_data(url)
         mask = self._apply_mask(band)
         polygons = self._convert_raster_to_polygons(mask, transform)
         gdf = self._create_geodataframe(polygons, crs)

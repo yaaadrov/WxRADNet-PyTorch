@@ -1,12 +1,14 @@
 from pathlib import Path
+from typing import Final
 
 from pydantic import BaseModel
 
-ROOT_PATH: Path = Path(__file__).resolve().parents[1]
-DATA_PATH: Path = ROOT_PATH / "data"
-RESULT_PATH: Path = ROOT_PATH / "results"
-TIMESTAMPS_PATH: Path = ROOT_PATH / "config" / "timestamps.pkl"
-AB_POINTS_PATH: Path = ROOT_PATH / "config" / "ab_points.pkl"
+ROOT_PATH: Final = Path(__file__).resolve().parents[1]
+DATA_PATH: Final = ROOT_PATH / "data"
+IMAGES_PATH: Final = ROOT_PATH / "images"
+RESULT_PATH: Final = ROOT_PATH / "results"
+TIMESTAMPS_PATH: Final = ROOT_PATH / "config" / "timestamps.pkl"
+AB_POINTS_PATH: Final = ROOT_PATH / "config" / "ab_points.pkl"
 
 
 class Settings(BaseModel):
@@ -24,7 +26,7 @@ class Settings(BaseModel):
     delta_length: float = 1.0  # Smooth fine-tuning length sensitivity
     bbox_buffer: int = 50_000  # Additional 50 km buffer for A and B points (Static Avoider)
 
-    # Preprocessor / Parser
+    # Preprocessor
     base_url: str = "http://s3-eu-west-1.amazonaws.com/fmi-opendata-radar-geotiff/{year}/{month}/{day}/FIN-DBZ-3067-250M/{year}{month}{day}{hour}{minute}_FIN-DBZ-3067-250M.tif"
     intensity_threshold_low: int = 100
     intensity_threshold_high: int = 255
