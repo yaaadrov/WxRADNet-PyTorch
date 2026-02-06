@@ -221,7 +221,7 @@ class Parser:
                         # Check if particular segments are informative
                         informative_segments, crop_borders = self.count_informative_segments(data, crop_borders)
                         if informative_segments == 0:
-                            print(f"-> SKIPPING hour {current_date.strftime("%Y-%m-%d %H")} as non-informative")
+                            print(f"-> SKIPPING hour {current_date.strftime('%Y-%m-%d %H')} as non-informative")
                             # Save progress if necessary
                             if self.is_last_hour_of_month(current_date):
                                 self.save_to_numpy(data_folder, current_date)
@@ -230,7 +230,7 @@ class Parser:
                             continue
 
                         print(
-                            f"DOWNLOADING hour {current_date.strftime("%Y-%m-%d %H")} "
+                            f"DOWNLOADING hour {current_date.strftime('%Y-%m-%d %H')} "
                             f"with {informative_segments} informative segments"
                         )
 
@@ -250,13 +250,13 @@ class Parser:
                 if current_date.minute == 0:
                     hour_data = [[] for _ in range(len(crop_borders))]
                     print(
-                        f"!!    ERROR hour {current_date.strftime("%Y-%m-%d %H")}, "
+                        f"!!    ERROR hour {current_date.strftime('%Y-%m-%d %H')}, "
                         f"first value unavailable"
                     )
                     current_date += timedelta(minutes=55)
                 else:
                     print(
-                        f"!     ERROR with {current_date.strftime("%Y-%m-%d %H:%M")}, "
+                        f"!     ERROR with {current_date.strftime('%Y-%m-%d %H:%M')}, "
                         f"using previous data instead"
                     )
                     # Add last value
