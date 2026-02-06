@@ -1,4 +1,3 @@
-import os
 import pickle
 import re
 import warnings
@@ -6,13 +5,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
-from pandas.errors import SettingWithCopyWarning
 from rasterio import RasterioIOError
 
 from thund_avoider.services.preprocessor import Preprocessor
 from thund_avoider.settings import settings, TIMESTAMPS_PATH, DATA_PATH, IMAGES_PATH
 
-warnings.simplefilter(action="ignore", category=SettingWithCopyWarning)
 warnings.simplefilter(action="ignore", category=UserWarning)
 
 NUM_ITERATIONS_PLUS: int = 30
