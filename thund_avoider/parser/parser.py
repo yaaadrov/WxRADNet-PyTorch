@@ -5,21 +5,6 @@ import cv2
 import json
 from datetime import datetime, timedelta
 from typing import List, Tuple
-from wakepy import keep
-
-BASE_URL = 'http://s3-eu-west-1.amazonaws.com/fmi-opendata-radar-geotiff/{year}/{month}/{day}/FIN-DBZ-3067-250M/{year}{month}{day}{hour}{minute}_FIN-DBZ-3067-250M.tif'
-PROGRESS_FILE = 'progress.json'
-FIRST_DATE = datetime(2020, 12, 31, 23, 55)
-LAST_DATE = datetime(2024, 7, 31, 23, 55)
-DELTA = timedelta(minutes=5)
-DELTA_HOUR = timedelta(hours=1)
-INTENSITY_THRESHOLD = 100
-MIN_PIXELS = 9000
-ANGLES = [
-    (60, 120),
-    (150, 210),
-    (240, 300)
-]
 
 
 def collect_data(input_folder: str) -> None:
@@ -38,13 +23,14 @@ def collect_data(input_folder: str) -> None:
 
     count = len(arrays_list)
     concatenated_array = np.concatenate(arrays_list, axis=0)
-    np.save('../thunderstorm_data.npy', concatenated_array)
+    np.save("../thunderstorm_data.npy", concatenated_array)
     print(
-        f'\n\n=====    Final array of shape {concatenated_array.shape} containing {count} files saved successfully    =====\n\n'
+        f"\n\n=====    Final array of shape {concatenated_array.shape} containing "
+        f"{count} files saved successfully    =====\n\n"
     )
 
 
-def rotate_image(image: np.array, angle: float) -> np.array:
+def rotate_image(image: np.ndarray, angle: float) -> np.ndarray:
     """
     Rotate an image to a specified angle
     Args:
@@ -60,7 +46,7 @@ def rotate_image(image: np.array, angle: float) -> np.array:
     return rotated_image
 
 
-def add_augmentation(hour_data: List) -> List:
+def add_augmentation(hour_data: List, angles: List) -> List:
     """
     Add data augmentation by rotating images to random angles within predefined ranges
     Args:
@@ -71,7 +57,7 @@ def add_augmentation(hour_data: List) -> List:
     augmented_data = []
     for i, border_data in enumerate(hour_data):
         if len(border_data) > 0:
-            for angle_range in ANGLES:
+            for angle_range in angles:
                 angle = np.random.uniform(angle_range[0], angle_range[1])
                 rotated_data = [
                     rotate_image(image, angle).reshape(image.shape[0], image.shape[1], 1) for image in border_data
@@ -82,16 +68,16 @@ def add_augmentation(hour_data: List) -> List:
 
 class Parser:
     def __init__(
-            self,
-            base_url: str,
-            progress_file: str,
-            first_date: datetime,
-            last_date: datetime,
-            delta: timedelta,
-            delta_hour: timedelta,
-            intensity_threshold: int,
-            min_pixels: int,
-            angles: List
+        self,
+        base_url: str,
+        progress_file: str,
+        first_date: datetime,
+        last_date: datetime,
+        delta: timedelta,
+        delta_hour: timedelta,
+        intensity_threshold: int,
+        min_pixels: int,
+        angles: List,
     ) -> None:
         """
         Initialize `Parser` class
@@ -139,7 +125,7 @@ class Parser:
         except (FileNotFoundError, KeyError, ValueError):
             return self.first_date
 
-    def count_informative_segments(self, data: np.array, crop_borders: List) -> Tuple[int, List]:
+    def count_informative_segments(self, data: np.ndarray, crop_borders: List) -> Tuple[int, List]:
         """
         Count segments which are considered informative
         Args:
@@ -189,14 +175,16 @@ class Parser:
         """
         data_folder = [data for data in data_folder if data.ndim == 5]
         if data_folder:
-            data_folder = np.concatenate(data_folder)
-            np.save(f'data/{current_date.year}-{current_date.month:02d}.npy', data_folder)
+            data_folder_np = np.concatenate(data_folder)
+            np.save(f"data/{current_date.year}-{current_date.month:02d}.npy", data_folder)
             print(
-                f'\n=====    Month {current_date.year}-{current_date.month:02d} is ready! Array of shape {data_folder.shape} saved to "data" folder    =====\n'
+                f"\n=====    Month {current_date.year}-{current_date.month:02d} is ready! "
+                f"Array of shape {data_folder_np.shape} saved to 'data' folder    =====\n"
             )
         else:
             print(
-                f'\n=====    Month {current_date.year}-{current_date.month:02d} is ready! Nothing to save    =====\n'
+                f"\n=====    Month {current_date.year}-{current_date.month:02d} is ready! "
+                f"Nothing to save    =====\n"
             )
         self.save_progress(current_date)
 
@@ -214,48 +202,35 @@ class Parser:
         ]
 
         while current_date <= self.last_date:
-
-            ######
-            print(current_date)
-            ######
-
             url = self.base_url.format(
                 year=current_date.year,
-                month=f'{current_date.month:02d}',
-                day=f'{current_date.day:02d}',
-                hour=f'{current_date.hour:02d}',
-                minute=f'{current_date.minute:02d}'
+                month=f"{current_date.month:02d}",
+                day=f"{current_date.day:02d}",
+                hour=f"{current_date.hour:02d}",
+                minute=f"{current_date.minute:02d}",
             )
-
             try:
                 with rasterio.open(url) as geotiff:
                     data = geotiff.read(1)
-
                     # If beginning of the hour
                     if current_date.minute == 0:
-
-                        # Arrays to fill with data
-                        hour_data = [[] for _ in range(len(crop_borders))]
-
-                        # Set all flags to True
+                        hour_data = [[] for _ in range(len(crop_borders))]  # Arrays to fill with data
                         for i in range(len(crop_borders)):
-                            crop_borders[i][0] = True
-
+                            crop_borders[i][0] = True  # Set all flags to True
                         # Check if particular segments are informative
                         informative_segments, crop_borders = self.count_informative_segments(data, crop_borders)
                         if informative_segments == 0:
-                            print(f'-> SKIPPING hour {current_date.strftime("%Y-%m-%d %H")} as non-informative')
-
+                            print(f"-> SKIPPING hour {current_date.strftime("%Y-%m-%d %H")} as non-informative")
                             # Save progress if necessary
                             if self.is_last_hour_of_month(current_date):
                                 self.save_to_numpy(data_folder, current_date)
                                 data_folder = []
-
                             current_date += self.delta_hour
                             continue
 
                         print(
-                            f'DOWNLOADING hour {current_date.strftime("%Y-%m-%d %H")} with {informative_segments} informative segments'
+                            f"DOWNLOADING hour {current_date.strftime("%Y-%m-%d %H")} "
+                            f"with {informative_segments} informative segments"
                         )
 
                     # Get and reshape each informative segment
@@ -273,11 +248,16 @@ class Parser:
             except BaseException:
                 if current_date.minute == 0:
                     hour_data = [[] for _ in range(len(crop_borders))]
-                    print(f'!!    ERROR hour {current_date.strftime("%Y-%m-%d %H")}, first value unavailable')
+                    print(
+                        f"!!    ERROR hour {current_date.strftime("%Y-%m-%d %H")}, "
+                        f"first value unavailable"
+                    )
                     current_date += timedelta(minutes=55)
                 else:
-                    print(f'!     ERROR with {current_date.strftime("%Y-%m-%d %H:%M")}, using previous data instead')
-
+                    print(
+                        f"!     ERROR with {current_date.strftime("%Y-%m-%d %H:%M")}, "
+                        f"using previous data instead"
+                    )
                     # Add last value
                     for i in range(len(hour_data)):
                         if hour_data[i]:
@@ -285,32 +265,16 @@ class Parser:
 
             if current_date.minute == 55 and not all(len(inner) == 0 for inner in hour_data):
                 # Add augmentation and gather everything in `data_folder`
-                # augmented_data = add_augmentation(hour_data)
-                # hour_data.extend(augmented_data)
+                augmented_data = add_augmentation(hour_data, self.angles)
+                hour_data.extend(augmented_data)
                 data_folder.append(
-                    np.array([np.array(border_data) for border_data in hour_data if len(border_data) > 0])
+                    np.array(
+                        [np.array(border_data) for border_data in hour_data if len(border_data) > 0]
+                    )
                 )
 
             # Save array
             if self.is_last_minute_of_month(current_date):
                 self.save_to_numpy(data_folder, current_date)
                 data_folder = []
-
             current_date += self.delta
-
-
-if __name__ == "__main__":
-    parser = Parser(
-        base_url=BASE_URL,
-        progress_file=PROGRESS_FILE,
-        first_date=FIRST_DATE,
-        last_date=LAST_DATE,
-        delta=DELTA,
-        delta_hour=DELTA_HOUR,
-        intensity_threshold=INTENSITY_THRESHOLD,
-        min_pixels=MIN_PIXELS,
-        angles=ANGLES
-    )
-    with keep.presenting():
-        parser.get_data()
-        collect_data('data')
