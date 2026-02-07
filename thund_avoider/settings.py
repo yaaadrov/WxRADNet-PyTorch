@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Final
+from typing import Final, Literal
 
 from pydantic import BaseModel
 
@@ -11,9 +11,26 @@ TIMESTAMPS_PATH: Final = ROOT_PATH / "config" / "timestamps.pkl"
 AB_POINTS_PATH: Final = ROOT_PATH / "config" / "ab_points.pkl"
 
 
-class Settings(BaseModel):
-    # Thund Avoider
-    projected_crs: int = 3067  # ETRS89 / TM35FIN(E,N)
+class PreprocessorConfig(BaseModel):
+    base_url: str = "http://s3-eu-west-1.amazonaws.com/fmi-opendata-radar-geotiff/{year}/{month}/{day}/FIN-DBZ-3067-250M/{year}{month}{day}{hour}{minute}_FIN-DBZ-3067-250M.tif"
+    intensity_threshold_low: int = 100
+    intensity_threshold_high: int = 255
+    distance_between: int = 25_000  # Minimum 50 km between two thunderstorms to proceed between
+    distance_avoid: int = 15_000  # Minimum 15 km to thunderstorm to circumnavigate
+
+
+class MaskedPreprocessorConfig(PreprocessorConfig):
+    square_side_length_m: int = 250_000  # Radar range 250 km (equals to 1000 pixels)
+
+
+class StaticAvoiderConfig(BaseModel):
+    buffer: int = 5_000  # Additional 5 km buffer
+    tolerance: int = 5_000  # Simplification tolerance
+    bbox_buffer: int = 50_000  # Additional 50 km buffer for A and B points
+
+
+class DynamicAvoiderConfig(BaseModel):
+    crs: int = 3067  # ETRS89 / TM35FIN(E,N)
     velocity_kmh: int = 900  # Velocity in km/hour
     delta_minutes: int = 5  # Forecast frequency
     buffer: int = 5_000  # Additional 5 km buffer
@@ -24,17 +41,15 @@ class Settings(BaseModel):
     smooth_tolerance: int = 5_000 * 5  # Tolerance for smoothing fine-tuning (tolerance * 5)
     max_iter: int = 300  # Maximum number of iterations for smooth fine-tuning
     delta_length: float = 1.0  # Smooth fine-tuning length sensitivity
-    bbox_buffer: int = 50_000  # Additional 50 km buffer for A and B points (Static Avoider)
+    strategy: Literal["concave", "convex"] = "concave"
+    tuning_strategy: Literal["greedy", "smooth"] = "greedy"
 
-    # Preprocessor
-    base_url: str = "http://s3-eu-west-1.amazonaws.com/fmi-opendata-radar-geotiff/{year}/{month}/{day}/FIN-DBZ-3067-250M/{year}{month}{day}{hour}{minute}_FIN-DBZ-3067-250M.tif"
-    intensity_threshold_low: int = 100
-    intensity_threshold_high: int = 255
-    distance_between: int = 25_000  # Minimum 50 km between two thunderstorms to proceed between
-    distance_avoid: int = 15_000  # Minimum 15 km to thunderstorm to circumnavigate
 
-    # Masked logic
-    square_side_length_m: int = 250_000  # Radar range 250 km (equals to 1000 pixels)
+class Settings(BaseModel):
+    preprocessor_config: PreprocessorConfig = PreprocessorConfig()
+    masked_preprocessor_config: MaskedPreprocessorConfig = MaskedPreprocessorConfig()
+    static_avoider_config: StaticAvoiderConfig = StaticAvoiderConfig()
+    dynamic_avoider_config: DynamicAvoiderConfig = DynamicAvoiderConfig()
 
 
 settings = Settings()

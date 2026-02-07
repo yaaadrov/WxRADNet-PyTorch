@@ -19,56 +19,43 @@ from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from shapely.ops import substring, unary_union
 
 from thund_avoider.schemas.dynamic_avoider import SlidingWindowPath, FineTunedPath
+from thund_avoider.settings import DynamicAvoiderConfig
 
 
 class DynamicAvoider:
-    def __init__(
-        self,
-        crs: CRS,
-        velocity_kmh: float,
-        delta_minutes: float,
-        buffer: float,
-        tolerance: float,
-        k_neighbors: int,
-        max_distance: float,
-        simplification_tolerance: float,
-        smooth_tolerance: float,
-        max_iter: int,
-        delta_length: float,
-        strategy: Literal["concave", "convex"] = "concave",
-        tuning_strategy: Literal["greedy", "smooth"] = "greedy",
-    ) -> None:
+    def __init__(self, config: DynamicAvoiderConfig) -> None:
         """
         Initialize `DynamicAvoider` class
 
         Args:
-            crs (CRS): Coordinate Reference System
-            velocity_kmh (float): Velocity in km/h
-            delta_minutes (float): Forecast frequency in minutes
-            buffer (float): Buffer distance for geometry simplification
-            tolerance (float): Simplification tolerance for geometry
-            k_neighbors (int): Number of neighbors for master graph
-            max_distance (float): Split each segment into several subsegments for greedy fine-tuning
-            simplification_tolerance (float): Tolerance to simplify paths after densifying
-            smooth_tolerance (float): Tolerance for smoothing fine-tuning
-            max_iter (int): Maximum number of iterations for smooth fine-tuning
-            delta_length (float): Smooth fine-tuning length sensitivity
-            strategy (Literal["concave", "convex"]): Path-finding strategy to apply
-            tuning_strategy (Literal["greedy", "smooth"]): Fine-tuning strategy to apply
+            config (DynamicAvoiderConfig): Avoider Configuration:
+                - crs (CRS): Coordinate Reference System
+                - velocity_kmh (float): Velocity in km/h
+                - delta_minutes (float): Forecast frequency in minutes
+                - buffer (float): Buffer distance for geometry simplification
+                - tolerance (float): Simplification tolerance for geometry
+                - k_neighbors (int): Number of neighbors for master graph
+                - max_distance (float): Split each segment into several subsegments for greedy fine-tuning
+                - simplification_tolerance (float): Tolerance to simplify paths after densifying
+                - smooth_tolerance (float): Tolerance for smoothing fine-tuning
+                - max_iter (int): Maximum number of iterations for smooth fine-tuning
+                - delta_length (float): Smooth fine-tuning length sensitivity
+                - strategy (Literal["concave", "convex"]): Path-finding strategy to apply
+                - tuning_strategy (Literal["greedy", "smooth"]): Fine-tuning strategy to apply
         """
-        self.crs = crs
-        self.velocity_mpm = velocity_kmh * 1000 / 60  # Velocity in meters/minute
-        self.delta_minutes = delta_minutes
-        self.buffer = buffer
-        self.tolerance = tolerance
-        self.k_neighbors = k_neighbors
-        self.max_distance = max_distance
-        self.simplification_tolerance = simplification_tolerance
-        self.smooth_tolerance = smooth_tolerance
-        self.max_iter = max_iter
-        self.delta_length = delta_length
-        self.strategy = strategy
-        self.tuning_strategy = tuning_strategy
+        self.crs = CRS(config.crs)
+        self.velocity_mpm = config.velocity_kmh * 1000 / 60  # Velocity in meters/minute
+        self.delta_minutes = config.delta_minutes
+        self.buffer = config.buffer
+        self.tolerance = config.tolerance
+        self.k_neighbors = config.k_neighbors
+        self.max_distance = config.max_distance
+        self.simplification_tolerance = config.simplification_tolerance
+        self.smooth_tolerance = config.smooth_tolerance
+        self.max_iter = config.max_iter
+        self.delta_length = config.delta_length
+        self.strategy = config.strategy
+        self.tuning_strategy = config.tuning_strategy
 
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)

@@ -1,6 +1,7 @@
 import os
 import pickle
 import re
+from datetime import datetime
 from pathlib import Path
 
 import geopandas as gpd
@@ -8,7 +9,7 @@ import pandas as pd
 from shapely import Point, LineString
 
 from ThundAvoider.thund_avoider.static_avoider import StaticAvoider
-from thund_avoider.settings import settings
+from thund_avoider.settings import settings, RESULT_PATH, DATA_PATH, TIMESTAMPS_PATH
 
 
 def load_geodataframe_from_csv(file_path: Path) -> gpd.GeoDataFrame:
@@ -61,22 +62,14 @@ def points_to_df(
     })
 
 
-def process_data(buffer: int, tolerance: int, bbox_buffer: int, timestamps: list[datetime]) -> None:
+def process_data(static_avoider: StaticAvoider, timestamps: list[datetime]) -> None:
     """
     Calculate path length for given number of timestamps for both strategies
 
     Args:
-        buffer (int): Buffer distance for geometry simplification
-        tolerance (int): Simplification tolerance for geometry
-        bbox_buffer (int): Buffer distance for bounding box when choosing A and B points
+        static_avoider (StaticAvoider): Static Avoider
         timestamps (list[datetime]): Timestamps
     """
-    static_avoider = StaticAvoider(
-        buffer=buffer,
-        tolerance=tolerance,
-        bbox_buffer=bbox_buffer,
-    )
-
     length = len(str(len(timestamps)))
     dir_path_result = RESULT_PATH / "static_avoider"
     if not dir_path_result.exists():
@@ -137,9 +130,5 @@ def process_data(buffer: int, tolerance: int, bbox_buffer: int, timestamps: list
 if __name__ == "__main__":
     with open(TIMESTAMPS_PATH, "rb") as file_in:
         timestamps = pickle.load(file_in)
-    process_data(
-        buffer=settings.buffer,
-        tolerance=settings.tolerance,
-        bbox_buffer=settings.bbox_buffer,
-        timestamps=timestamps,
-    )
+    static_avoider = StaticAvoider(settings.static_avoider_config)
+    process_data(static_avoider, timestamps)

@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Final
 
 import pandas as pd
-from pyproj import CRS
 from shapely import Point, LineString
 
 from thund_avoider.schemas.dynamic_avoider import SlidingWindowPath, FineTunedPath
@@ -199,21 +198,7 @@ if __name__ == "__main__":
     with open(AB_POINTS_PATH, "rb") as file_in:
         ab_points = pickle.load(file_in)
 
-    dynamic_avoider = DynamicAvoider(
-        crs=CRS(settings.projected_crs),
-        velocity_kmh=settings.velocity_kmh,
-        delta_minutes=settings.delta_minutes,
-        buffer=settings.buffer,
-        tolerance=settings.tolerance,
-        k_neighbors=settings.k_neighbors,
-        max_distance=settings.max_distance,
-        simplification_tolerance=settings.simplification_tolerance,
-        smooth_tolerance=settings.smooth_tolerance,
-        max_iter=settings.max_iter,
-        delta_length=settings.delta_length,
-        strategy="concave",
-        tuning_strategy="greedy",
-    )
+    dynamic_avoider = DynamicAvoider(settings.dynamic_avoider_config)
 
     # Initial pathfinding
     process_data(
