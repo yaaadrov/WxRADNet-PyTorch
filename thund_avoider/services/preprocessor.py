@@ -15,32 +15,27 @@ from shapely.geometry import shape, Polygon, MultiPolygon
 from shapely.ops import unary_union
 
 from thund_avoider.schemas.preprocessor import RasterioCompressionSchema
+from thund_avoider.settings import PreprocessorConfig
 
 
 class Preprocessor:
-    def __init__(
-        self,
-        base_url: str,
-        intensity_threshold_low: int,
-        intensity_threshold_high: int,
-        distance_between: int,
-        distance_avoid: int,
-    ):
+    def __init__(self, config: PreprocessorConfig):
         """
         Initialize `Preprocessor` class
 
         Args:
-            base_url (str): Base URL to get data from
-            intensity_threshold_low (int): Threshold for minimum intensity value
-            intensity_threshold_high (int): Threshold for maximum intensity value
-            distance_between (int): Half distance between two thunderstorms to proceed between
-            distance_avoid (int): Minimum buffer to avoid thunderstorm with
+            config (PreprocessorConfig): Preprocessor configuration:
+                - base_url (str): Base URL to get data from
+                - intensity_threshold_low (int): Threshold for minimum intensity value
+                - intensity_threshold_high (int): Threshold for maximum intensity value
+                - distance_between (int): Half distance between two thunderstorms to proceed between
+                - distance_avoid (int): Minimum buffer to avoid thunderstorm with
         """
-        self.base_url = base_url
-        self.intensity_threshold_low = intensity_threshold_low
-        self.intensity_threshold_high = intensity_threshold_high
-        self.distance_between = distance_between
-        self.distance_avoid = distance_avoid
+        self.base_url = config.base_url
+        self.intensity_threshold_low = config.intensity_threshold_low
+        self.intensity_threshold_high = config.intensity_threshold_high
+        self.distance_between = config.distance_between
+        self.distance_avoid = config.distance_avoid
 
     def _generate_url(self, current_date: datetime) -> str:
         """Generate URL with correct datetime values"""

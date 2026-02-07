@@ -1,5 +1,3 @@
-from typing import Literal
-
 import networkx as nx
 from pydantic import BaseModel, ConfigDict
 from shapely import Point
@@ -30,19 +28,3 @@ class FineTunedPath(BaseModel):
     num_segments: int
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
-
-
-class DynamicAvoiderConfig(BaseModel):
-    crs: int
-    velocity_kmh: float
-    delta_minutes: float
-    buffer: float
-    tolerance: float
-    k_neighbors: int
-    max_distance: float
-    simplification_tolerance: float
-    smooth_tolerance: float
-    max_iter: int
-    delta_length: float
-    strategy: Literal["concave", "convex"] = "concave"
-    tuning_strategy: Literal["greedy", "smooth"] = "greedy"

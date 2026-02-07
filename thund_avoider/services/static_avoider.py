@@ -2,25 +2,23 @@ import geopandas as gpd
 import networkx as nx
 from shapely.geometry import LineString, Point, Polygon
 
+from thund_avoider.settings import StaticAvoiderConfig
+
 
 class StaticAvoider:
-    def __init__(
-        self,
-        buffer: int,
-        tolerance: int,
-        bbox_buffer: int,
-    ):
+    def __init__(self, config: StaticAvoiderConfig):
         """
         Initialize `StaticAvoider` class
 
         Args:
-            buffer (int): Buffer distance for geometry simplification
-            tolerance (int): Simplification tolerance for geometry
-            bbox_buffer (int): Buffer distance for bounding box when choosing A and B points
+            config (StaticAvoiderConfig): Static Avoider configuration:
+                - buffer (int): Buffer distance for geometry simplification
+                - tolerance (int): Simplification tolerance for geometry
+                - bbox_buffer (int): Buffer distance for bounding box when choosing A and B points
         """
-        self.buffer = buffer
-        self.tolerance = tolerance
-        self.bbox_buffer = bbox_buffer
+        self.buffer = config.buffer
+        self.tolerance = config.tolerance
+        self.bbox_buffer = config.bbox_buffer
 
     def _process_obstacles(
         self,

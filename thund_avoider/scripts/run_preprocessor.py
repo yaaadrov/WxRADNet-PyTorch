@@ -163,13 +163,7 @@ def process_dates(
 
 
 if __name__ == "__main__":
-    preprocessor = Preprocessor(
-        base_url=settings.base_url,
-        intensity_threshold_low=settings.intensity_threshold_low,
-        intensity_threshold_high=settings.intensity_threshold_high,
-        distance_between=settings.distance_between,
-        distance_avoid=settings.distance_avoid,
-    )
+    preprocessor = Preprocessor(settings.preprocessor_config)
     with open(TIMESTAMPS_PATH, "rb") as file_in:
         timestamps_to_process = pickle.load(file_in)
     process_dates(
