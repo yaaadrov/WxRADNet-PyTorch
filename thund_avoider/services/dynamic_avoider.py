@@ -17,6 +17,7 @@ from scipy.spatial import Delaunay, KDTree
 from shapely import STRtree
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from shapely.ops import substring, unary_union
+from shapely.prepared import prep
 
 from thund_avoider.schemas.dynamic_avoider import SlidingWindowPath, FineTunedPath
 from thund_avoider.settings import DynamicAvoiderConfig
@@ -231,7 +232,7 @@ class DynamicAvoider:
         self,
         vertices: list[Point],
         time_keys: list[str],
-        dict_obstacles: dict[str, gpd.GeoDataFrame],
+        dict_obstacles: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]],
     ) -> tuple[nx.Graph, dict[str, list[tuple[int, int, float]]]]:
         """
         Build master graph for given vertices from all available obstacles
@@ -239,7 +240,7 @@ class DynamicAvoider:
         Args:
             vertices (list[Point]): List of all available vertex Point objects
             time_keys (list[str]): List of master time keys
-            dict_obstacles (dict[str, gpd.GeoDataFrame]): Obstacle geometries for each time key
+            dict_obstacles (dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]]): Obstacle geometries for each time key
 
         Returns:
             tuple:
@@ -247,32 +248,33 @@ class DynamicAvoider:
                 - dict[str, list[tuple[int, int, float]]]: List of valid edges for each time key
         """
         self.logger.info("Building master graph:")
-        centroids = self._simplify_vertices(vertices)
-        G_master = nx.Graph()
-        for i, p in enumerate(centroids):
-            G_master.add_node(i, pos=(p.x, p.y), point=p)
-
-        coords = [(p.x, p.y) for p in centroids]
-        tri = Delaunay(coords)
-        delaunay_edges = {
-            tuple(sorted((i, j)))
-            for simplex in tri.simplices
-            for i, j in it.combinations(simplex, 2)
-        }
-
-        kd = KDTree(coords)
-        knn_edges = {
-            tuple(sorted((i, j)))
-            for i, coord in enumerate(coords)
-            for j in kd.query(coord, k=self.k_neighbors + 1)[1]
-            if i != j
-        }
-
-        candidates = delaunay_edges | knn_edges
         strtrees = {
             time_key: STRtree(list(dict_obstacles[time_key][self.strategy]))
             for time_key in time_keys
         }
+        G_master = nx.Graph()
+        candidates = set()
+        centroids = self._simplify_vertices(vertices)
+
+        if centroids:
+            for i, p in enumerate(centroids):
+                G_master.add_node(i, pos=(p.x, p.y), point=p)
+            coords = [(p.x, p.y) for p in centroids]
+            tri = Delaunay(coords)
+            delaunay_edges = {
+                tuple(sorted((i, j)))
+                for simplex in tri.simplices
+                for i, j in it.combinations(simplex, 2)
+            }
+            kd = KDTree(coords)
+            knn_edges = {
+                tuple(sorted((i, j)))
+                for i, coord in enumerate(coords)
+                for j in kd.query(coord, k=self.k_neighbors + 1)[1]
+                if i != j
+            }
+            candidates = delaunay_edges | knn_edges
+
         return self._validate_candidates(
             G=G_master,
             centroids=centroids,
@@ -330,23 +332,28 @@ class DynamicAvoider:
         Returns:
             nx.Graph: Subgraph with points added to the graph
         """
+        G = G_sub.copy()
         vertices = [data["point"] for _, data in G_master.nodes(data=True)]
         coords = [(p.x, p.y) for p in vertices]
-        kd_tree = KDTree(coords)
         strtree = STRtree(obstacles)
+        kd_tree = None
 
-        G = G_sub.copy()
+        has_vertices = len(coords) > 0
+        if has_vertices:
+            kd_tree = KDTree(coords)
+
         for point_name, point in points:
             G.add_node(point_name, pos=(point.x, point.y), point=point)
-            _, idxs = kd_tree.query([point.x, point.y], k=self.k_neighbors)
-            for i in idxs:
-                target_point = vertices[i]
-                line = LineString([point, target_point])
-                possible_idxs = strtree.query(line)
-                possible_obs = [strtree.geometries[i] for i in possible_idxs]
-                if self._is_line_valid(line, possible_obs):
-                    w = point.distance(target_point)
-                    G.add_edge(point_name, i, weight=w)
+            if has_vertices:
+                _, idxs = kd_tree.query([point.x, point.y], k=min(self.k_neighbors, len(coords)))
+                for i in idxs:
+                    target_point = vertices[i]
+                    line = LineString([point, target_point])
+                    possible_idxs = strtree.query(line)
+                    possible_obs = [strtree.geometries[i] for i in possible_idxs]
+                    if self._is_line_valid(line, possible_obs):
+                        w = point.distance(target_point)
+                        G.add_edge(point_name, i, weight=w)
         return G
 
     def _find_shortest_path(
@@ -453,6 +460,127 @@ class DynamicAvoider:
                 return closest_point, False if point_type == "start" else True
         return point, True
 
+    def _pathfinding_iter(
+        self,
+        current_pos: Point,
+        end: Point,
+        *,
+        sliding_window_result: SlidingWindowPath,
+        current_time_index: int,
+        window_size: int,
+        time_keys: list[str],
+        available_obstacles_dict: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]],
+        G_master: nx.Graph,
+        master_vertices: list[Point],
+        time_valid_edges: dict[str, list[tuple[int, int, float]]],
+    ) -> tuple[Point, int, bool]:
+        """
+        Perform one step of the sliding window pathfinding
+
+        Args:
+            current_pos (Point): Aircraft current position
+            end (Point): Final point
+            sliding_window_result (SlidingWindowPath): Object to update results
+            current_time_index (int): Index of current timestamp
+            window_size (int): Size of pathfinding window
+            time_keys (list[str]): All available time keys sorted chronologically
+            available_obstacles_dict (dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]]): Known obstacles
+            G_master (nx.Graph): Master graph with all possible vertices
+            master_vertices (list[Point]): List of master graph's vertices
+            time_valid_edges (dict[str, list[tuple[int, int, float]]]): List of valid edges for each time key
+
+        Returns:
+            Point: Updated position
+            int: Updated time index
+            bool: Whether to continue the loop
+        """
+        # Extract time keys for the current window
+        window_time_keys = time_keys[current_time_index:current_time_index + window_size]
+        if not window_time_keys:
+            self.logger.info("No more available time keys")
+            return current_pos, current_time_index, False
+
+        # Collect obstacles for current window
+        try:
+            window_obstacles = [
+                available_obstacles_dict[time_key][self.strategy]
+                for time_key in window_time_keys
+            ]
+            window_obstacles_flat = list(it.chain(*window_obstacles))
+        except KeyError:
+            return current_pos, current_time_index, False
+
+        # Check start and end points
+        current_pos_updated, success_start = self._check_start_end_point(
+            point=current_pos,
+            point_type="start",
+            flat_obstacles=window_obstacles_flat,
+            vertices=master_vertices,
+        )
+        current_end, _ = self._check_start_end_point(
+            point=end,
+            point_type="end",
+            flat_obstacles=window_obstacles_flat,
+            vertices=master_vertices,
+        )
+        sliding_window_result.success_intermediate &= success_start
+        if current_pos != current_pos_updated:
+            sliding_window_result.moved_original_points_mapping[current_pos_updated] = current_pos
+
+        # Build subgraph and add start and end points
+        G_sub = self._subgraph_for_time_keys(
+            G_master=G_master,
+            time_keys=window_time_keys,
+            time_valid_edges=time_valid_edges,
+        )
+        G_sub = self._add_points_to_subgraph(
+            points=[("start", current_pos_updated), ("end", current_end)],
+            G_master=G_master,
+            G_sub=G_sub,
+            obstacles=window_obstacles_flat,
+        )
+
+        # Find the shortest path
+        shortest_path = self._find_shortest_path(G_sub)
+        if shortest_path is None:
+            sliding_window_result.success = False
+            self.logger.info(
+                f"No path found for time window at {time_keys[current_time_index]}"
+            )
+            return current_pos_updated, current_time_index, False
+        _, path_idx = shortest_path
+
+        # Tune shortest path
+        shortest_path_tuned = self._tune_path(
+            G_sub, path_idx, window_obstacles_flat
+            )
+        if shortest_path_tuned is None:
+            sliding_window_result.success = False
+            self.logger.info(
+                f"Unable to tune path for time window at {time_keys[current_time_index]}"
+            )
+            return current_pos_updated, current_time_index, False
+        path_tuned, _ = shortest_path_tuned
+
+        # Add data
+        sliding_window_result.all_paths.append(path_tuned)
+        sliding_window_result.all_graphs.append(G_sub)
+
+        # Update current position
+        path_within_window = substring(LineString(path_tuned), 0,self.velocity_mpm * self.delta_minutes)
+        points_within_window = [Point(coord) for coord in path_within_window.coords]
+        new_pos = points_within_window[-1]
+        new_time_index = current_time_index + 1
+
+        # Extend the valid portion of the path
+        sliding_window_result.path.append(points_within_window)
+        length = len(str(len(time_keys)))
+        self.logger.info(
+            f"\t{current_time_index + 1:<{length}}/{len(time_keys) - window_size}: Path created, "
+            f"Num edges: {len(G_sub.edges)}",
+        )
+        return new_pos, new_time_index, True
+
     def _perform_pathfinding(
         self,
         current_pos: Point,
@@ -461,112 +589,36 @@ class DynamicAvoider:
         current_time_index: int,
         window_size: int,
         time_keys: list[str],
-        dict_obstacles: dict[str, gpd.GeoDataFrame],
+        dict_obstacles: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]],
         G_master: nx.Graph,
         master_vertices: list[Point],
         time_valid_edges: dict[str, list[tuple[int, int, float]]],
     ) -> SlidingWindowPath:
-        path = []
-        all_paths = []
-        all_graphs = []
-        success = True
-        success_intermediate = True
-        length = len(str(len(time_keys)))
+        result = SlidingWindowPath(strategy=self.strategy)
         self.logger.info("Start pathfinding:")
 
         while current_pos != end and current_time_index < len(time_keys) - window_size:
-            # Extract time keys for the current window
-            window_time_keys = time_keys[current_time_index:current_time_index + window_size]
-            if not window_time_keys:
-                self.logger.info("No more available time keys")
-                break
-
-            # Collect obstacles for current window
-            window_obstacles = [
-                dict_obstacles[time_key][self.strategy] for time_key in window_time_keys
-            ]
-            window_obstacles_flat = list(it.chain(*window_obstacles))
-
-            # Check start and end points
-            current_pos, success_start = self._check_start_end_point(
-                point=current_pos,
-                point_type="start",
-                flat_obstacles=window_obstacles_flat,
-                vertices=master_vertices,
-            )
-            current_end, _ = self._check_start_end_point(
-                point=end,
-                point_type="end",
-                flat_obstacles=window_obstacles_flat,
-                vertices=master_vertices,
-            )
-            success_intermediate = success_intermediate and success_start
-
-            # Build subgraph and add start and end points
-            G_sub = self._subgraph_for_time_keys(
+            current_pos, current_time_index, should_continue = self._pathfinding_iter(
+                current_pos=current_pos,
+                end=end,
+                sliding_window_result=result,
+                current_time_index=current_time_index,
+                window_size=window_size,
+                time_keys=time_keys,
+                available_obstacles_dict=dict_obstacles,
                 G_master=G_master,
-                time_keys=window_time_keys,
+                master_vertices=master_vertices,
                 time_valid_edges=time_valid_edges,
             )
-            G_sub = self._add_points_to_subgraph(
-                points=[("start", current_pos), ("end", current_end)],
-                G_master=G_master,
-                G_sub=G_sub,
-                obstacles=window_obstacles_flat,
-            )
-
-            # Find the shortest path
-            shortest_path = self._find_shortest_path(G_sub)
-            if shortest_path is None:
-                success = False
-                self.logger.info(
-                    f"No path found for time window at {time_keys[current_time_index]}"
-                )
+            if not should_continue:
                 break
-            _, path_idx = shortest_path
-
-            # Tune shortest path
-            shortest_path_tuned = self._tune_path(G_sub, path_idx, window_obstacles_flat)
-            if shortest_path_tuned is None:
-                success = False
-                self.logger.info(
-                    f"Unable to tune path for time window at {time_keys[current_time_index]}"
-                )
-                break
-            path_tuned, _ = shortest_path_tuned
-
-            # Add data
-            all_paths.append(path_tuned)
-            all_graphs.append(G_sub)
-
-            # Update current position
-            path_line = LineString(path_tuned)
-            path_within_window = substring(path_line, 0, self.velocity_mpm * self.delta_minutes)
-            points_within_window = [Point(coord) for coord in path_within_window.coords]
-            current_pos = points_within_window[-1]
-            current_time_index += 1
-
-            # Extend the valid portion of the path
-            path.append(points_within_window)
-            self.logger.info(
-                f"\t{current_time_index:<{length}}/{len(time_keys) - window_size}: Path created, "
-                f"Num edges: {len(G_sub.edges)}",
-            )
 
         # Add the end point if not reached yet
-        num_segments = current_time_index - 1
-        if path and list(it.chain(*path))[-1] != end:
-            path.append([end])
+        result.num_segments = current_time_index - 1
+        if result.path and list(it.chain(*result.path))[-1] != end:
+            result.path.append([end])
 
-        return SlidingWindowPath(
-            strategy=self.strategy,
-            path=path,
-            all_paths=all_paths,
-            all_graphs=all_graphs,
-            success=success,
-            success_intermediate=success_intermediate,
-            num_segments=num_segments,
-        )
+        return result
 
     def _interpolate_points(self, p1: Point, p2: Point) -> list[Point]:
         """
@@ -641,6 +693,9 @@ class DynamicAvoider:
     ) -> bool:
         for i, segment in enumerate(segments):
             time_key = time_keys[i]
+            # Skip validation if no obstacle data available for this time_key
+            if time_key not in strtrees:
+                continue
             tree = strtrees[time_key]
             possible_idxs = tree.query(segment)
             possible_obs = [tree.geometries[i] for i in possible_idxs]
@@ -749,7 +804,9 @@ class DynamicAvoider:
             cos_theta = dot_product / (mag_ba * mag_bc)
             cos_theta = max(-1.0, min(1.0, cos_theta))
             angle_rad = math.acos(cos_theta)
+
             return math.degrees(angle_rad)
+
         except Exception:
             return 180.0
 
@@ -915,6 +972,68 @@ class DynamicAvoider:
             case "smooth":
                 return self._smooth_fine_tuning
 
+    def _pathfinding_with_finetuning_iter(
+        self,
+        current_pos: Point,
+        end: Point,
+        *,
+        fine_tuning_result: FineTunedPath,
+        current_time_index: int,
+        window_size: int,
+        time_keys: list[str],
+        available_obstacles_dict: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]],
+        G_master: nx.Graph,
+        master_vertices: list[Point],
+        time_valid_edges: dict[str, list[tuple[int, int, float]]],
+        strtrees: dict[str, STRtree],
+    ) -> tuple[Point, int, bool]:
+        path_initial = self._perform_pathfinding(
+            current_pos=current_pos,
+            end=end,
+            current_time_index=current_time_index,
+            window_size=window_size,
+            time_keys=time_keys,
+            dict_obstacles=available_obstacles_dict,
+            G_master=G_master,
+            master_vertices=master_vertices,
+            time_valid_edges=time_valid_edges,
+        )
+        fine_tuning_result.all_paths_initial_raw.append(path_initial)
+        fine_tuning_result.success_intermediate &= path_initial.success_intermediate
+        if not path_initial.success:
+            fine_tuning_result.success = False
+            self.logger.info("Unable to fine-tune non-success path")
+            return current_pos, current_time_index, False
+
+        # Fine-tune initial path according to selected strategy
+        path_flat = list(it.chain(*path_initial.path))
+        path_flat = [key for key, group in it.groupby(path_flat)]
+        path_fine_tuned, num_iters, fine_tuning_time = self.fine_tuning_function(
+            path_flat=path_flat,
+            time_keys=time_keys[current_time_index:],
+            strtrees=strtrees,
+        )
+
+        # Add data
+        fine_tuning_result.all_paths_initial.append(path_flat)
+        fine_tuning_result.all_paths_fine_tuned.append(path_fine_tuned)
+        fine_tuning_result.fine_tuning_iters.append(num_iters)
+        fine_tuning_result.fine_tuning_times.append(fine_tuning_time)
+
+        # Update current position
+        path_within_window = substring(LineString(path_fine_tuned), 0, self.velocity_mpm * self.delta_minutes)
+        points_within_window = [Point(coord) for coord in path_within_window.coords]
+        new_pos = points_within_window[-1]
+        new_time_index = current_time_index + 1
+
+        # Extend the valid portion of the path
+        fine_tuning_result.path.append(points_within_window)
+        length = len(str(len(time_keys)))
+        self.logger.info(
+            f"\t{current_time_index + 1:<{length}}/{len(time_keys) - window_size}: Path fine-tuned"
+        )
+        return new_pos, new_time_index, True
+
     def _perform_pathfinding_with_finetuning(
         self,
         current_pos: Point,
@@ -923,20 +1042,12 @@ class DynamicAvoider:
         current_time_index: int,
         window_size: int,
         time_keys: list[str],
-        dict_obstacles: dict[str, gpd.GeoDataFrame],
+        dict_obstacles: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]],
         G_master: nx.Graph,
         master_vertices: list[Point],
         time_valid_edges: dict[str, list[tuple[int, int, float]]],
-    ):
-        path = []
-        all_paths_initial = []
-        all_paths_fine_tuned = []
-        all_paths_initial_raw = []
-        fine_tuning_iters = []
-        fine_tuning_times = []
-        success = True
-        success_intermediate = True
-        length = len(str(len(time_keys)))
+    ) -> FineTunedPath:
+        result = FineTunedPath(strategy=self.strategy)
         strtrees = {
             time_key: STRtree(list(dict_obstacles[time_key][self.strategy]))
             for time_key in time_keys
@@ -944,82 +1055,43 @@ class DynamicAvoider:
         self.logger.info("Start pathfinding with fine-tuning:")
 
         while current_pos != end and current_time_index < len(time_keys) - window_size:
-            # Find initial path
-            path_initial = self._perform_pathfinding(
+            current_pos, current_time_index, should_continue = self._pathfinding_with_finetuning_iter(
                 current_pos=current_pos,
                 end=end,
+                fine_tuning_result=result,
                 current_time_index=current_time_index,
                 window_size=window_size,
                 time_keys=time_keys,
-                dict_obstacles=dict_obstacles,
+                available_obstacles_dict=dict_obstacles,
                 G_master=G_master,
                 master_vertices=master_vertices,
                 time_valid_edges=time_valid_edges,
-            )
-            all_paths_initial_raw.append(path_initial)
-            success_intermediate = success_intermediate and path_initial.success_intermediate
-            if not path_initial.success:
-                success = False
-                self.logger.info("Unable to fine-tune non-success path")
-                break
-
-            # Fine-tune initial path according to selected strategy
-            path_flat = list(it.chain(*path_initial.path))
-            path_flat = [key for key, group in it.groupby(path_flat)]
-            path_fine_tuned, num_iters, fine_tuning_time = self.fine_tuning_function(
-                path_flat=path_flat,
-                time_keys=time_keys[current_time_index:],
                 strtrees=strtrees,
             )
-
-            # Add data
-            all_paths_initial.append(path_flat)
-            all_paths_fine_tuned.append(path_fine_tuned)
-            fine_tuning_iters.append(num_iters)
-            fine_tuning_times.append(fine_tuning_time)
-
-            # Update current position
-            path_line = LineString(path_fine_tuned)
-            path_within_window = substring(path_line, 0, self.velocity_mpm * self.delta_minutes)
-            points_within_window = [Point(coord) for coord in path_within_window.coords]
-            current_pos = points_within_window[-1]
-            current_time_index += 1
-
-            # Extend the valid portion of the path
-            path.append(points_within_window)
-            self.logger.info(
-                f"\t{current_time_index:<{length}}/{len(time_keys) - window_size}: Path fine-tuned"
-            )
+            if not should_continue:
+                break
 
         # Add the end point if not reached yet
-        num_segments = current_time_index - 1
-        if path and list(it.chain(*path))[-1] != end:
-            path.append([end])
+        result.num_segments = current_time_index - 1
+        if result.path and list(it.chain(*result.path))[-1] != end:
+            result.path.append([end])
 
-        return FineTunedPath(
-            strategy=self.strategy,
-            path=path,
-            all_paths_initial=all_paths_initial,
-            all_paths_fine_tuned=all_paths_fine_tuned,
-            all_paths_initial_raw=all_paths_initial_raw,
-            fine_tuning_iters=fine_tuning_iters,
-            fine_tuning_times=fine_tuning_times,
-            success=success,
-            success_intermediate=success_intermediate,
-            num_segments=num_segments,
-        )
+        return result
 
     def create_master_graph(
         self,
         time_keys: list[str],
-        dict_obstacles: dict[str, gpd.GeoDataFrame],
+        dict_obstacles: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]],
+        prohibited_zone: Polygon = Polygon(),
+        previous_path: list[Point] = [],
     ) -> tuple[nx.Graph, dict[str, list[tuple[int, int, float]]]]:
         """
         Create a master graph from `dict_obstacles`
 
         Args:
             time_keys (list[str]): All available time keys sorted chronologically
-            dict_obstacles (dict[str, gpd.GeoDataFrame]): Dictionary of obstacles GeoDataFrames
+            dict_obstacles (dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]]): Dictionary of obstacles GeoDataFrames
+            prohibited_zone (Polygon): Prohibited zone where graph's nodes are not allowed
 
         Returns:
             tuple:
@@ -1031,14 +1103,17 @@ class DynamicAvoider:
             for time_key in time_keys
         ]
         master_obstacles_flat = list(it.chain(*master_obstacles))
-        all_vertices = sorted(
-            set(
-                it.chain(
-                    *[self._collect_vertices([obstacle]) for obstacle in master_obstacles_flat]
-                )
-            ),
-            key=lambda p: (p.x, p.y),
+        raw_vertices = set(
+            it.chain(
+                *[self._collect_vertices([obstacle]) for obstacle in master_obstacles_flat]
+            )
         )
+        all_vertices = list(raw_vertices)
+        if not prohibited_zone.is_empty:
+            prepared_zone = prep(prohibited_zone)
+            all_vertices = [p for p in raw_vertices if not prepared_zone.intersects(p)]
+        all_vertices.extend(previous_path)
+        all_vertices.sort(key=lambda p: (p.x, p.y))
         return self._build_master_graph(
             vertices=all_vertices,
             time_keys=time_keys,
@@ -1052,7 +1127,7 @@ class DynamicAvoider:
         *,
         window_size: int,
         time_keys: list[str],
-        dict_obstacles: dict[str, gpd.GeoDataFrame],
+        dict_obstacles: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]],
         G_master: nx.Graph,
         time_valid_edges: dict[str, list[tuple[int, int, float]]],
         with_fine_tuning: bool = False,
@@ -1065,7 +1140,7 @@ class DynamicAvoider:
             end (Point): End point
             window_size (int): Sliding window size
             time_keys (list[str]): All available time keys sorted chronologically
-            dict_obstacles (dict[str, gpd.GeoDataFrame]): Dictionary of obstacles GeoDataFrames
+            dict_obstacles (dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]]): Dictionary of obstacles GeoDataFrames
             G_master (nx.Graph): Master graph with all possible valid edges
             time_valid_edges (dict[str, list[tuple[int, int, float]]]): List of valid edges for each time key
             with_fine_tuning (bool): Weather to apply global fine-tuning
