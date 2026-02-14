@@ -19,8 +19,10 @@ class PreprocessorConfig(BaseModel):
     distance_avoid: int = 15_000  # Minimum 15 km to thunderstorm to circumnavigate
 
 
-class MaskedPreprocessorConfig(PreprocessorConfig):
+class MaskedPreprocessorConfig(BaseModel):
+    preprocessor_config: PreprocessorConfig = PreprocessorConfig()
     square_side_length_m: int = 250_000  # Radar range 250 km (equals to 1000 pixels)
+    bbox_buffer_m: int = 10_000  # 10 km buffer to remove G_master nodes from around the bounding box
 
 
 class StaticAvoiderConfig(BaseModel):

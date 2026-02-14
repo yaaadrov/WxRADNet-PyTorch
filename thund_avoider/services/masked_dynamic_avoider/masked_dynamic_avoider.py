@@ -1,40 +1,259 @@
-from pyproj import CRS
+import copy
+import itertools as it
+import math
+from typing import Literal
 
-from thund_avoider.schemas.dynamic_avoider import DynamicAvoiderConfig
-from thund_avoider.services.dynamic_avoider import DynamicAvoider
-from thund_avoider.services.masked_dynamic_avoider.masked_preprocessor import (
-    MaskedPreprocessor,
-    PreprocessorConfig,
+import geopandas as gpd
+import networkx as nx
+import numpy as np
+from shapely import Point, Polygon, STRtree, MultiPolygon
+from shapely.ops import unary_union
+
+from thund_avoider.schemas.dynamic_avoider import SlidingWindowPath, FineTunedPath
+from thund_avoider.schemas.masked_dynamic_avoider import (
+    DirectionVector, SlidingWindowPathMasked,
+    FineTunedPathMasked,
 )
+from thund_avoider.services.dynamic_avoider import DynamicAvoider
+from thund_avoider.services.masked_dynamic_avoider.masked_preprocessor import MaskedPreprocessor
+from thund_avoider.settings import MaskedPreprocessorConfig, DynamicAvoiderConfig
 
 
 class MaskedDynamicAvoider(DynamicAvoider):
     def __init__(
         self,
-        preprocessor_config: PreprocessorConfig,
+        masked_preprocessor_config: MaskedPreprocessorConfig,
         dynamic_avoider_config: DynamicAvoiderConfig,
     ) -> None:
-        super().__init__(
-            crs=CRS(dynamic_avoider_config.crs),
-            velocity_kmh=dynamic_avoider_config.velocity_kmh,
-            delta_minutes=dynamic_avoider_config.delta_minutes,
-            buffer=dynamic_avoider_config.buffer,
-            tolerance=dynamic_avoider_config.tolerance,
-            k_neighbors=dynamic_avoider_config.k_neighbors,
-            max_distance=dynamic_avoider_config.max_distance,
-            simplification_tolerance=dynamic_avoider_config.simplification_tolerance,
-            smooth_tolerance=dynamic_avoider_config.smooth_tolerance,
-            max_iter=dynamic_avoider_config.max_iter,
-            delta_length=dynamic_avoider_config.delta_length,
-            strategy=dynamic_avoider_config.strategy,
-            tuning_strategy=dynamic_avoider_config.tuning_strategy,
-        )
-        self.preprocessor = MaskedPreprocessor(
-            base_url=preprocessor_config.base_url,
-            intensity_threshold_low=preprocessor_config.intensity_threshold_low,
-            intensity_threshold_high=preprocessor_config.intensity_threshold_high,
-            distance_between=preprocessor_config.distance_between,
-            distance_avoid=preprocessor_config.distance_avoid,
-            square_side_length_m=preprocessor_config.square_side_length_m,
-        )
+        super().__init__(dynamic_avoider_config)
+        self.preprocessor = MaskedPreprocessor(masked_preprocessor_config)
 
+    @staticmethod
+    def _create_direction_vector(
+        path: SlidingWindowPath | FineTunedPath | list[Point],
+    ) -> DirectionVector:
+        if isinstance(path, (SlidingWindowPath, FineTunedPath)):
+            path = list(it.chain(*path.path))
+        unique_path = [key for key, _ in it.groupby(path)]
+        # Iterate backwards to find two points with non-zero direction
+        for i in range(len(unique_path) - 1, 0, -1):
+            point_a, point_b = unique_path[i - 1], unique_path[i]
+            dx, dy = point_b.x - point_a.x, point_b.y - point_a.y
+            magnitude = math.sqrt(dx ** 2 + dy ** 2)
+            if not np.isclose(magnitude, 0, atol=1e-6):
+                return DirectionVector(dx=dx, dy=dy)
+        raise ValueError(f"Unable to create Direction Vector: all points in path are identical")
+
+    def _add_previous_obstacles(
+        self,
+        current_result: SlidingWindowPathMasked | FineTunedPathMasked,
+        available_obstacles_dict: dict[str, dict[str, list[Polygon]]],
+        time_keys: list[str],
+        current_time_index: int,
+        clipping_bbox: Polygon,
+    ) -> dict[str, dict[str, list[Polygon]]]:
+        previous_obstacles = (
+            current_result.available_obstacles_dicts[-1][time_keys[current_time_index - 1]][self.strategy]
+            if current_result.available_obstacles_dicts else []
+        )
+        # obstacle_to_add = Polygon()
+        # if previous_obstacles:
+        #     remaining_prev = unary_union(previous_obstacles).difference(clipping_bbox)
+        #     if isinstance(remaining_prev, Polygon):
+        #         obstacle_to_add = remaining_prev
+        #     if isinstance(remaining_prev, MultiPolygon):
+        #         polys = [geom for geom in remaining_prev.geoms if isinstance(geom, Polygon)]
+        #         obstacle_to_add = max(polys, key=lambda p: p.area) if polys else Polygon()
+        if previous_obstacles:
+            remaining_prev = unary_union(previous_obstacles).difference(clipping_bbox)
+            extracted_list = [remaining_prev] if isinstance(remaining_prev, Polygon) else list(remaining_prev.geoms)
+            available_obstacles_dict[time_keys[current_time_index]][self.strategy].extend(extracted_list)
+        current_result.available_obstacles_dicts.append(available_obstacles_dict)
+        return available_obstacles_dict
+
+    def _prepare_obstacles(
+        self,
+        current_result: SlidingWindowPathMasked | FineTunedPathMasked,
+        current_pos: Point,
+        time_keys: list[str],
+        current_time_index: int,
+        num_preds: int,
+        dict_obstacles: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]],
+        current_direction_vector: DirectionVector,
+        masking_strategy: Literal["center", "left", "right", "wide"] = "wide",
+    ) -> tuple[list[str], dict[str, dict[str, list[Polygon]]], Polygon]:
+        available_time_keys = time_keys[current_time_index:current_time_index + num_preds]
+        clipping_bbox = self.preprocessor.get_oriented_bbox(
+            current_position=current_pos,
+            direction_vector=current_direction_vector,
+            strategy=masking_strategy,
+        )
+        available_obstacles_dict: dict[str, dict[str, list[Polygon]]] = {
+            time_key: {
+                self.strategy: self.preprocessor.clip_polygons(
+                    dict_obstacles[time_key][self.strategy].tolist(),
+                    bbox=clipping_bbox,
+                )
+            }
+            for time_key in available_time_keys
+        }
+        available_obstacles_dict_with_previous = self._add_previous_obstacles(
+            current_result=current_result,
+            available_obstacles_dict=available_obstacles_dict,
+            time_keys=time_keys,
+            current_time_index=current_time_index,
+            clipping_bbox=clipping_bbox,
+        )
+        # prohibited_boundary_zone = self.preprocessor.get_prohibited_boundary_zone(
+        #     geometry=list(it.chain(*[dict_obstacles[time_key][self.strategy].tolist()for time_key in available_time_keys])),
+        #     bbox=clipping_bbox,
+        # )
+        prohibited_boundary_zone = Polygon()  # TODO: Remove prohibited_boundary_zone logic if unnecessary
+        return available_time_keys, available_obstacles_dict_with_previous, prohibited_boundary_zone
+
+    def _prepare_master_graph_local(
+        self,
+        available_time_keys: list[str],
+        available_obstacles_dict: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]],
+        prohibited_zone: Polygon = Polygon(),
+        with_str_trees: bool = False,
+        previous_path: list[Point] = [],
+    ) -> tuple[
+        nx.Graph,
+        dict[str, list[tuple[int, int, float]]],
+        list[Point],
+        dict[str, STRtree] | None,
+    ]:
+        G_master_local, time_valid_edges_local = self.create_master_graph(
+            time_keys=available_time_keys,
+            dict_obstacles=available_obstacles_dict,
+            prohibited_zone=prohibited_zone,
+            previous_path=previous_path,
+        )
+        master_vertices_local = [data["point"] for _, data in G_master_local.nodes(data=True)]
+        strtrees = {
+            time_key: STRtree(available_obstacles_dict[time_key][self.strategy])
+            for time_key in available_time_keys
+        } if with_str_trees else None
+        return G_master_local, time_valid_edges_local, master_vertices_local, strtrees
+
+    def perform_pathfinding_masked(
+        self,
+        current_pos: Point,
+        end: Point,
+        *,
+        current_time_index: int,
+        window_size: int,
+        time_keys: list[str],
+        dict_obstacles: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]],
+        masking_strategy: Literal["center", "left", "right", "wide"] = "wide",
+    ) -> SlidingWindowPathMasked:
+        result = SlidingWindowPathMasked(strategy=self.strategy)
+        current_direction_vector = self._create_direction_vector([current_pos, end])
+        self.logger.info("Start masked pathfinding:")
+
+        while (
+            current_pos != end and
+            current_time_index < len(time_keys) - window_size
+        ):
+            available_time_keys, available_obstacles_dict, prohibited_boundary_zone = self._prepare_obstacles(
+                current_result=result,
+                current_pos=current_pos,
+                time_keys=time_keys,
+                current_time_index=current_time_index,
+                num_preds=window_size,
+                dict_obstacles=dict_obstacles,
+                current_direction_vector=current_direction_vector,
+                masking_strategy=masking_strategy,
+            )
+            G_master_local, time_valid_edges_local, master_vertices_local, _ = self._prepare_master_graph_local(
+                available_time_keys=available_time_keys,  # Use only available time_keys
+                available_obstacles_dict=available_obstacles_dict,
+                prohibited_zone=prohibited_boundary_zone,
+                previous_path=self._densify_path(result.all_paths[-1]) if result.all_paths else [],
+            )
+            current_pos, current_time_index, should_continue = self._pathfinding_iter(
+                current_pos=current_pos,
+                end=end,
+                sliding_window_result=result,
+                current_time_index=current_time_index,
+                window_size=window_size,
+                time_keys=time_keys,  # Pass all time_keys, required window will be extracted inside
+                available_obstacles_dict=available_obstacles_dict,
+                G_master=G_master_local,
+                master_vertices=master_vertices_local,
+                time_valid_edges=time_valid_edges_local,
+            )
+            if not should_continue:
+                break
+            current_direction_vector = self._create_direction_vector(result)
+
+        # Add the end point if not reached yet
+        result.num_segments = current_time_index - 1
+        if result.path and list(it.chain(*result.path))[-1] != end:
+            result.path.append([end])
+
+        return result
+
+    def perform_pathfinding_with_finetuning_masked(
+        self,
+        current_pos: Point,
+        end: Point,
+        *,
+        current_time_index: int,
+        window_size: int,
+        num_preds: int,
+        time_keys: list[str],
+        dict_obstacles: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]],
+        masking_strategy: Literal["center", "left", "right", "wide"] = "wide",
+    ) -> FineTunedPathMasked:
+        result = FineTunedPathMasked(strategy=self.strategy)
+        current_direction_vector = self._create_direction_vector([current_pos, end])
+        if window_size > num_preds:
+            raise RuntimeError("Window size cannot be greater than number of available predictions")
+        self.logger.info("Start pathfinding with fine-tuning:")
+
+        while (
+            current_pos != end and
+            current_time_index < len(time_keys) - num_preds
+        ):
+            available_time_keys, available_obstacles_dict, prohibited_boundary_zone = self._prepare_obstacles(
+                current_result=result,
+                current_pos=current_pos,
+                time_keys=time_keys,
+                current_time_index=current_time_index,
+                num_preds=num_preds,
+                dict_obstacles=dict_obstacles,
+                current_direction_vector=current_direction_vector,
+                masking_strategy=masking_strategy,
+            )
+            G_master_local, time_valid_edges_local, master_vertices_local, strtrees_local = self._prepare_master_graph_local(
+                available_time_keys=available_time_keys,  # Use only available time_keys
+                available_obstacles_dict=available_obstacles_dict,
+                prohibited_zone=prohibited_boundary_zone,
+                with_str_trees=True,
+                previous_path=self._densify_path(result.all_paths_fine_tuned[-1]) if result.all_paths_fine_tuned else [],
+            )
+            current_pos, current_time_index, should_continue = self._pathfinding_with_finetuning_iter(
+                current_pos=current_pos,
+                end=end,
+                fine_tuning_result=result,
+                current_time_index=current_time_index,
+                window_size=window_size,
+                time_keys=time_keys,  # Pass all time_keys, required window will be extracted inside
+                available_obstacles_dict=available_obstacles_dict,
+                G_master=G_master_local,
+                master_vertices=master_vertices_local,
+                time_valid_edges=time_valid_edges_local,
+                strtrees=strtrees_local,
+            )
+            if not should_continue:
+                break
+            current_direction_vector = self._create_direction_vector(result)
+
+        # Add the end point if not reached yet
+        result.num_segments = current_time_index - 1
+        if result.path and list(it.chain(*result.path))[-1] != end:
+            result.path.append([end])
+
+        return result
