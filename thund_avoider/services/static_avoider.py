@@ -2,6 +2,7 @@ import geopandas as gpd
 import networkx as nx
 from shapely.geometry import LineString, Point, Polygon
 
+from thund_avoider.services.utils import is_line_valid
 from thund_avoider.settings import StaticAvoiderConfig
 
 
@@ -59,22 +60,6 @@ class StaticAvoider:
         all_vertices.extend(points)  # Add A and B points
         return all_vertices
 
-    def _is_line_valid(self, line: LineString, obstacles: list[Polygon]) -> bool:
-        """
-        Check if a line intersects any obstacle
-
-        Args:
-            line (LineString): Line to check
-            obstacles (list[Polygon]): List of obstacle geometries
-
-        Returns:
-            bool: True if the line is valid, False otherwise
-        """
-        for obstacle in obstacles:
-            if line.intersects(obstacle):
-                return False
-        return True
-
     def _build_visibility_graph(self, vertices: list[Point], obstacles: list[Polygon]) -> nx.Graph:
         """
         Build a visibility graph for the given vertices and obstacles
@@ -97,7 +82,7 @@ class StaticAvoider:
             for j, p2 in enumerate(vertices):
                 if i != j:  # Avoid self-loops
                     line = LineString([p1, p2])
-                    if self._is_line_valid(line, obstacles):
+                    if is_line_valid(line, obstacles):
                         distance = p1.distance(p2)
                         G.add_edge(i, j, weight=distance)
 

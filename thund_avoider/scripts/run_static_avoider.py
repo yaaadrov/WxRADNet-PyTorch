@@ -2,31 +2,14 @@ import os
 import pickle
 import re
 from datetime import datetime
-from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
 from shapely import Point, LineString
 
-from ThundAvoider.thund_avoider.static_avoider import StaticAvoider
+from thund_avoider.services.dynamic_avoider.data_loader import DataLoader
+from thund_avoider.services.static_avoider import StaticAvoider
 from thund_avoider.settings import settings, RESULT_PATH, DATA_PATH, TIMESTAMPS_PATH
-
-
-def load_geodataframe_from_csv(file_path: Path) -> gpd.GeoDataFrame:
-    """
-    Load GeoDataFrame from a CSV file
-
-    Args:
-        file_path (Path): Path to the CSV file
-
-    Returns:
-        gpd.GeoDataFrame: Loaded GeoDataFrame
-    """
-    df = pd.read_csv(file_path)
-    for col in df.columns:
-        df[col] = gpd.GeoSeries.from_wkt(df[col])
-    gdf = gpd.GeoDataFrame(df, geometry="geometry")
-    return gdf
 
 
 def points_to_df(
@@ -82,7 +65,7 @@ def process_data(static_avoider: StaticAvoider, timestamps: list[datetime]) -> N
             continue
 
         file_path = DATA_PATH / file_name / f"{file_name}.csv"
-        gdf = load_geodataframe_from_csv(file_path)
+        gdf = DataLoader.load_geodataframe_from_csv(file_path)
 
         minx, miny, maxx, maxy = gdf["convex"].buffer(static_avoider.bbox_buffer).total_bounds
         points = {

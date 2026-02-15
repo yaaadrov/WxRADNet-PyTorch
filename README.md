@@ -194,15 +194,15 @@ FMI S3 Bucket (GeoTIFF)
 #### Using the Parser
 
 ```python
-from thund_avoider.parser.parser import Parser
+from thund_avoider.services.parser.parser import Parser
 from thund_avoider.settings import PreprocessorConfig
 
 config = PreprocessorConfig(
-    base_url="https://fmi-opendata-{}-radar-tutorial.s3-flash-{}",  # FMI S3 pattern
-    intensity_threshold_low=100,
-    intensity_threshold_high=255,
-    distance_between=25000,   # 25 * 2 km minimum between thunderstorms
-    distance_avoid=15000,     # 15km buffer around storms
+  base_url="https://fmi-opendata-{}-radar-tutorial.s3-flash-{}",  # FMI S3 pattern
+  intensity_threshold_low=100,
+  intensity_threshold_high=255,
+  distance_between=25000,  # 25 * 2 km minimum between thunderstorms
+  distance_avoid=15000,  # 15km buffer around storms
 )
 
 parser = Parser(config)

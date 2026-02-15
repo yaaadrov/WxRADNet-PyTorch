@@ -1,20 +1,18 @@
 from datetime import datetime
 from pathlib import Path
-from typing import List, Tuple
 
 import affine
 import geopandas as gpd
 import networkx as nx
 import numpy as np
-import pandas as pd
 import rasterio
 import rasterio.features
-import shapely
 from concave_hull import concave_hull
 from shapely.geometry import shape, Polygon, MultiPolygon
 from shapely.ops import unary_union
 
 from thund_avoider.schemas.preprocessor import RasterioCompressionSchema
+from thund_avoider.services.dynamic_avoider.data_loader import DataLoader
 from thund_avoider.settings import PreprocessorConfig
 
 
@@ -55,14 +53,14 @@ class Preprocessor:
     def _convert_raster_to_polygons(
         mask: np.ndarray,
         transform: affine.Affine,
-    ) -> List[shapely.geometry.Polygon]:
+    ) -> list[Polygon]:
         """Convert raster mask to list of shapely Polygons"""
         shapes = list(rasterio.features.shapes(mask.astype(np.uint8), transform=transform))
         return [shape(geom) for geom, val in shapes if val == 1]
 
     @staticmethod
     def _create_geodataframe(
-        polygons: List[shapely.geometry.Polygon],
+        polygons: list[Polygon],
         crs: rasterio.crs.CRS,
     ) -> gpd.GeoDataFrame:
         """Create GeoDataFrame from list of shapely Polygons with given CRS"""
@@ -75,7 +73,7 @@ class Preprocessor:
         return gdf
 
     @staticmethod
-    def _find_overlaps(gdf_buffer: gpd.GeoDataFrame) -> List[Tuple]:
+    def _find_overlaps(gdf_buffer: gpd.GeoDataFrame) -> list[tuple]:
         """Find pairs of indices of overlapping polygons"""
         overlaps = gpd.sjoin(gdf_buffer, gdf_buffer, how="inner", predicate="intersects")
         overlaps = overlaps.reset_index().rename(columns={"index": "index_left"})
@@ -112,8 +110,8 @@ class Preprocessor:
 
     @staticmethod
     def _concave_from_multipolygon(
-        multipolygon: shapely.geometry.Polygon | shapely.geometry.MultiPolygon,
-    ) -> shapely.geometry.Polygon:
+        multipolygon: Polygon | MultiPolygon,
+    ) -> Polygon:
         """Create a concave hull from a multipolygon"""
         if isinstance(multipolygon, Polygon):
             return multipolygon
@@ -162,19 +160,12 @@ class Preprocessor:
     @staticmethod
     def save_geodataframe_to_csv(gdf: gpd.GeoDataFrame, file_path: Path) -> None:
         """Save GeoDataFrame to a CSV file"""
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        for col in gdf.columns:
-            gdf[col] = gdf[col].apply(lambda geom: geom.wkt if geom is not None else None)
-        gdf.to_csv(file_path, index=False)
+        DataLoader.save_geodataframe_to_csv(gdf, file_path)
 
     @staticmethod
     def load_geodataframe_from_csv(file_path: Path) -> gpd.GeoDataFrame:
         """Load GeoDataFrame from a CSV file"""
-        df = pd.read_csv(file_path)
-        for col in df.columns:
-            df[col] = gpd.GeoSeries.from_wkt(df[col])
-        gdf = gpd.GeoDataFrame(df, geometry="geometry")
-        return gdf
+        return DataLoader.load_geodataframe_from_csv(file_path)
 
     def get_gpd_for_current_date(self, current_date: datetime) -> gpd.GeoDataFrame:
         """Get gpd.GeoDataFrame for required timestamp"""
