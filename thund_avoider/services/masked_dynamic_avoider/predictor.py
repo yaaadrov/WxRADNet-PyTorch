@@ -219,6 +219,7 @@ class ThunderstormPredictor:
 
     @staticmethod
     def _resize_with_max_pooling(data: np.ndarray, target_size: int) -> np.ndarray:
+        """Resize image using max pooling for downsampling."""
         current_h, current_w = data.shape[:2]
         lcm_h, lcm_w = (
            (current_h * target_size) // math.gcd(current_h, target_size),
@@ -369,6 +370,7 @@ class ThunderstormPredictor:
             current_position (Point): Current aircraft position.
             direction_vector (DirectionVector): Direction vector for cropping.
             strategy (Literal["concave", "convex"]): Hull strategy for polygons.
+            by_url (bool): Whether to fetch images by URL instead of local path.
 
         Returns:
             PredictionResult: Container with predicted obstacles for each time key.

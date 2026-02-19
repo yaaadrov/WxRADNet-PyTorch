@@ -23,6 +23,13 @@ from thund_avoider.settings import MaskedPreprocessorConfig, DynamicAvoiderConfi
 
 
 class MaskedDynamicAvoider(DynamicAvoider):
+    """
+    Masked dynamic pathfinding for large-scale operations.
+
+    Extends DynamicAvoider with spatial masking capabilities for efficient
+    processing of large geographic areas using moving bounding boxes.
+    """
+
     def __init__(
         self,
         masked_preprocessor_config: MaskedPreprocessorConfig,
@@ -33,10 +40,26 @@ class MaskedDynamicAvoider(DynamicAvoider):
         self.preprocessor = MaskedPreprocessor(masked_preprocessor_config)
         self.predictor = ThunderstormPredictor(config=predictor_config, preprocessor=self.preprocessor)
 
+    # ==========================================================================
+    # Direction Vector Utilities
+    # ==========================================================================
+
     @staticmethod
     def _create_direction_vector(
         path: SlidingWindowPath | FineTunedPath | list[Point],
     ) -> DirectionVector:
+        """
+        Create a direction vector from the last two non-identical points in a path.
+
+        Args:
+            path: Path result or list of points.
+
+        Returns:
+            DirectionVector: Direction vector (dx, dy) from the path.
+
+        Raises:
+            ValueError: If all points in the path are identical.
+        """
         if isinstance(path, (SlidingWindowPath, FineTunedPath)):
             path = list(it.chain(*path.path))
         unique_path = [key for key, _ in it.groupby(path)]
@@ -49,6 +72,10 @@ class MaskedDynamicAvoider(DynamicAvoider):
                 return DirectionVector(dx=dx, dy=dy)
         raise ValueError(f"Unable to create Direction Vector: all points in path are identical")
 
+    # ==========================================================================
+    # Obstacle Preparation
+    # ==========================================================================
+
     def _add_previous_obstacles(
         self,
         current_result: SlidingWindowPathMasked | FineTunedPathMasked,
@@ -57,6 +84,19 @@ class MaskedDynamicAvoider(DynamicAvoider):
         current_time_index: int,
         clipping_bbox: Polygon,
     ) -> dict[str, dict[str, list[Polygon]]]:
+        """
+        Add remaining obstacles from previous window to current obstacles.
+
+        Args:
+            current_result: Current pathfinding result with obstacle history.
+            available_obstacles_dict: Current window's obstacles.
+            time_keys: All available time keys.
+            current_time_index: Index of current timestamp.
+            clipping_bbox: Bounding box used for clipping.
+
+        Returns:
+            Updated obstacles dictionary with previous obstacles added.
+        """
         previous_obstacles = (
             current_result.available_obstacles_dicts[-1][time_keys[current_time_index - 1]][self.strategy]
             if current_result.available_obstacles_dicts else []
@@ -87,6 +127,22 @@ class MaskedDynamicAvoider(DynamicAvoider):
         clipping_bbox: Polygon,
         prediction_mode: Literal["deterministic", "predictive"] = "deterministic",
     ) -> tuple[list[str], dict[str, dict[str, list[Polygon]]]]:
+        """
+        Get available obstacles based on prediction mode.
+
+        Args:
+            current_pos: Current aircraft position.
+            time_keys: All available time keys.
+            current_time_index: Index of current timestamp.
+            num_preds: Number of predictions to use.
+            dict_obstacles: Original obstacles dictionary.
+            current_direction_vector: Direction vector for predictions.
+            clipping_bbox: Bounding box for clipping obstacles.
+            prediction_mode: "deterministic" uses actual data, "predictive" uses ML predictions.
+
+        Returns:
+            Tuple of (available_time_keys, available_obstacles_dict).
+        """
         match prediction_mode:
             case "deterministic":
                 available_time_keys = time_keys[
@@ -134,6 +190,23 @@ class MaskedDynamicAvoider(DynamicAvoider):
         masking_strategy: Literal["center", "left", "right", "wide"] = "wide",
         prediction_mode: Literal["deterministic", "predictive"] = "deterministic",
     ) -> tuple[list[str], dict[str, dict[str, list[Polygon]]], Polygon]:
+        """
+        Prepare obstacles for current pathfinding window.
+
+        Args:
+            current_result: Current pathfinding result.
+            current_pos: Current aircraft position.
+            time_keys: All available time keys.
+            current_time_index: Index of current timestamp.
+            num_preds: Number of predictions to use.
+            dict_obstacles: Original obstacles dictionary.
+            current_direction_vector: Direction vector for cropping.
+            masking_strategy: Strategy for oriented bounding box.
+            prediction_mode: "deterministic" or "predictive".
+
+        Returns:
+            Tuple of (available_time_keys, obstacles_dict, prohibited_zone).
+        """
         clipping_bbox = self.preprocessor.get_oriented_bbox(
             current_position=current_pos,
             direction_vector=current_direction_vector,
@@ -159,6 +232,9 @@ class MaskedDynamicAvoider(DynamicAvoider):
         prohibited_boundary_zone = Polygon()  # TODO: Remove prohibited_boundary_zone logic if unnecessary
         return available_time_keys, available_obstacles_dict_with_previous, prohibited_boundary_zone
 
+    # ==========================================================================
+    # Graph Preparation
+    # ==========================================================================
 
     def _prepare_master_graph_local(
         self,
@@ -173,6 +249,19 @@ class MaskedDynamicAvoider(DynamicAvoider):
         list[Point],
         dict[str, STRtree] | None,
     ]:
+        """
+        Prepare local master graph for current window.
+
+        Args:
+            available_time_keys: Time keys for current window.
+            available_obstacles_dict: Obstacles for current window.
+            prohibited_zone: Zone where nodes are not allowed.
+            with_str_trees: Whether to build STRTrees for fine-tuning.
+            previous_path: Previous path points to include in graph.
+
+        Returns:
+            Tuple of (graph, valid_edges, vertices, strtrees).
+        """
         G_master_local, time_valid_edges_local = self.create_master_graph(
             time_keys=available_time_keys,
             dict_obstacles=available_obstacles_dict,
@@ -185,6 +274,10 @@ class MaskedDynamicAvoider(DynamicAvoider):
             for time_key in available_time_keys
         } if with_str_trees else None
         return G_master_local, time_valid_edges_local, master_vertices_local, strtrees
+
+    # ==========================================================================
+    # Path Validation
+    # ==========================================================================
 
     def _validate_path_against_initial_obstacles(
         self,
@@ -223,6 +316,10 @@ class MaskedDynamicAvoider(DynamicAvoider):
                 return False
         return True
 
+    # ==========================================================================
+    # Main Public Methods
+    # ==========================================================================
+
     def perform_pathfinding_masked(
         self,
         current_pos: Point,
@@ -235,6 +332,22 @@ class MaskedDynamicAvoider(DynamicAvoider):
         masking_strategy: Literal["center", "left", "right", "wide"] = "wide",
         prediction_mode: Literal["deterministic", "predictive"] = "deterministic",
     ) -> SlidingWindowPathMasked:
+        """
+        Perform masked sliding window pathfinding.
+
+        Args:
+            current_pos: Starting position.
+            end: End position.
+            current_time_index: Index of current timestamp.
+            window_size: Size of pathfinding window.
+            time_keys: All available time keys sorted chronologically.
+            dict_obstacles: Dictionary of obstacles GeoDataFrames.
+            masking_strategy: Strategy for spatial masking.
+            prediction_mode: "deterministic" uses actual data, "predictive" uses ML predictions.
+
+        Returns:
+            SlidingWindowPathMasked: Pathfinding result with masked obstacles.
+        """
         result = SlidingWindowPathMasked(strategy=self.strategy)
         current_direction_vector = self._create_direction_vector([current_pos, end])
         self.logger.info("Start masked pathfinding:")
@@ -305,6 +418,26 @@ class MaskedDynamicAvoider(DynamicAvoider):
         masking_strategy: Literal["center", "left", "right", "wide"] = "wide",
         prediction_mode: Literal["deterministic", "predictive"] = "deterministic",
     ) -> FineTunedPathMasked:
+        """
+        Perform masked pathfinding with fine-tuning.
+
+        Args:
+            current_pos: Starting position.
+            end: End position.
+            current_time_index: Index of current timestamp.
+            window_size: Size of pathfinding window.
+            num_preds: Number of prediction time steps available.
+            time_keys: All available time keys sorted chronologically.
+            dict_obstacles: Dictionary of obstacles GeoDataFrames.
+            masking_strategy: Strategy for spatial masking.
+            prediction_mode: "deterministic" uses actual data, "predictive" uses ML predictions.
+
+        Returns:
+            FineTunedPathMasked: Pathfinding result with fine-tuning and masked obstacles.
+
+        Raises:
+            RuntimeError: If window_size > num_preds.
+        """
         result = FineTunedPathMasked(strategy=self.strategy)
         current_direction_vector = self._create_direction_vector([current_pos, end])
         if window_size > num_preds:
