@@ -16,7 +16,10 @@ from thund_avoider.settings import GraphBuilderConfig
 
 
 class GraphBuilder:
+    """Builds master graphs for pathfinding from obstacle polygons."""
+
     def __init__(self, config: GraphBuilderConfig) -> None:
+        """Initialize GraphBuilder with configuration."""
         self._config = config
         self._crs = CRS(config.crs)
         self._logger = logging.getLogger(__name__)

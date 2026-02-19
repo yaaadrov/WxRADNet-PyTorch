@@ -39,6 +39,10 @@ class DynamicAvoider:
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
 
+    # ==========================================================================
+    # Properties
+    # ==========================================================================
+
     @property
     def tuning_strategy(self) -> str:
         """Get the fine-tuning strategy."""
@@ -48,6 +52,10 @@ class DynamicAvoider:
     def tuning_strategy(self, value: str) -> None:
         """Set the fine-tuning strategy."""
         self._fine_tuner._config.tuning_strategy = value
+
+    # ==========================================================================
+    # Data Loading
+    # ==========================================================================
 
     @staticmethod
     def extract_time_keys(dir_path) -> list[str]:
@@ -61,6 +69,10 @@ class DynamicAvoider:
     ) -> dict[str, gpd.GeoDataFrame]:
         """Collect GeoDataFrames with obstacles data into a dictionary."""
         return self._data_loader.collect_obstacles(directory_path, time_keys)
+
+    # ==========================================================================
+    # Pathfinding Utilities
+    # ==========================================================================
 
     def _find_shortest_path(
         self,
@@ -103,6 +115,10 @@ class DynamicAvoider:
         G_tune = self._graph_builder.build_visibility_graph(G_tune, window_obstacles)
         return self._find_shortest_path(G_tune)
 
+    # ==========================================================================
+    # Point Validation
+    # ==========================================================================
+
     def _check_start_end_point(
         self,
         point: Point,
@@ -139,6 +155,10 @@ class DynamicAvoider:
                 )
                 return closest_point, False if point_type == "start" else True
         return point, True
+
+    # ==========================================================================
+    # Sliding Window Pathfinding
+    # ==========================================================================
 
     def _densify_path(self, path: list[Point]) -> list[Point]:
         """Densify the path by interpolating points to ensure no segment exceeds max_distance."""
@@ -463,6 +483,10 @@ class DynamicAvoider:
 
         return result
 
+    # ==========================================================================
+    # Graph Building
+    # ==========================================================================
+
     def create_master_graph(
         self,
         time_keys: list[str],
@@ -488,6 +512,10 @@ class DynamicAvoider:
             prohibited_zone=prohibited_zone,
             previous_path=previous_path,
         )
+
+    # ==========================================================================
+    # Main Public Methods
+    # ==========================================================================
 
     def sliding_window_pathfinding(
         self,

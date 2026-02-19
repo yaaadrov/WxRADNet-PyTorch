@@ -128,6 +128,9 @@ python thund_avoider/scripts/run_static_avoider.py
 
 # Dynamic pathfinding (time-varying weather)
 python thund_avoider/scripts/run_dynamic_avoider.py
+
+# Masked dynamic pathfinding (spatial masking for large areas)
+python thund_avoider/scripts/run_masked_dynamic_avoider.py
 ```
 
 ---
@@ -196,17 +199,9 @@ FMI S3 Bucket (GeoTIFF)
 
 ```python
 from thund_avoider.services.parser.parser import Parser
-from thund_avoider.settings import PreprocessorConfig
+from thund_avoider.settings import settings
 
-config = PreprocessorConfig(
-  base_url="https://fmi-opendata-{}-radar-tutorial.s3-flash-{}",  # FMI S3 pattern
-  intensity_threshold_low=100,
-  intensity_threshold_high=255,
-  distance_between=25000,  # 25 * 2 km minimum between thunderstorms
-  distance_avoid=15000,  # 15km buffer around storms
-)
-
-parser = Parser(config)
+parser = Parser(settings.parser_config)
 
 # Download and process data for a date range
 parser.get_data()
@@ -218,20 +213,13 @@ parser.get_data()
 from datetime import datetime
 from pathlib import Path
 from thund_avoider.services.preprocessor import Preprocessor
-from thund_avoider.settings import PreprocessorConfig
+from thund_avoider.settings import settings
 
-config = PreprocessorConfig(
-  intensity_threshold_low=100,
-  intensity_threshold_high=255,
-  distance_between=50000,
-  distance_avoid=15000,
-)
-
-preprocessor = Preprocessor(config)
+preprocessor = Preprocessor(settings.preprocessor_config)
 
 # Process a specific timestamp
 gdf = preprocessor.get_gdf_for_current_date(
-  current_date=datetime(2024, 5, 30, 15, 0),
+    current_date=datetime(2024, 5, 30, 15, 0),
 )
 
 # Save to CSV
@@ -245,16 +233,9 @@ The static avoider finds the shortest path around weather obstacles at a single 
 ```python
 from shapely import Point
 from thund_avoider.services.static_avoider import StaticAvoider
-from thund_avoider.settings import StaticAvoiderConfig
+from thund_avoider.settings import settings
 
-config = StaticAvoiderConfig(
-    buffer=5000,           # 5km additional buffer
-    tolerance=5000,        # 5km simplification tolerance
-    bbox_buffer=50000,     # 50km buffer for A/B points
-    strategy="concave",    # or "convex"
-)
-
-avoider = StaticAvoider(config)
+avoider = StaticAvoider(settings.static_avoider_config)
 
 # Find shortest path
 result = avoider.find_shortest_path(
@@ -277,25 +258,9 @@ The dynamic avoider handles time-varying weather using a sliding window approach
 ```python
 from shapely import Point
 from thund_avoider.services.dynamic_avoider import DynamicAvoider
-from thund_avoider.settings import DynamicAvoiderConfig
+from thund_avoider.settings import settings
 
-config = DynamicAvoiderConfig(
-    crs="EPSG:3067",           # ETRS89/TM35FIN
-    velocity_kmh=900,          # Aircraft speed
-    delta_minutes=5,           # Forecast frequency
-    buffer=5000,               # Obstacle buffer
-    tolerance=5000,            # Simplification tolerance
-    k_neighbors=10,            # KNN neighbors for graph
-    max_distance=5000,         # Max segment distance for densification
-    simplification_tolerance=1000,
-    smooth_tolerance=2000,
-    max_iter=100,
-    delta_length=100,
-    strategy="concave",        # or "convex"
-    tuning_strategy="greedy",  # or "smooth"
-)
-
-avoider = DynamicAvoider(config)
+avoider = DynamicAvoider(settings.dynamic_avoider_config)
 
 # Extract time keys from data directory
 time_keys = avoider.extract_time_keys(Path("data/2024_05_30"))
@@ -333,24 +298,13 @@ The masked dynamic avoider uses spatial masking to efficiently handle large area
 
 ```python
 from shapely import Point
-from thund_avoider.services.masked_dynamic_avoider.masked_dynamic_avoider import MaskedDynamicAvoider
-from thund_avoider.settings import MaskedPreprocessorConfig, DynamicAvoiderConfig
-
-preprocessor_config = MaskedPreprocessorConfig(
-    square_side_length_m=250000,  # 250km radar range
-    bbox_buffer_m=10000,          # 10km buffer
-)
-
-dynamic_config = DynamicAvoiderConfig(
-    velocity_kmh=900,
-    delta_minutes=5,
-    strategy="concave",
-    tuning_strategy="greedy",
-)
+from thund_avoider.services.masked_dynamic_avoider import MaskedDynamicAvoider
+from thund_avoider.settings import settings
 
 avoider = MaskedDynamicAvoider(
-    masked_preprocessor_config=preprocessor_config,
-    dynamic_avoider_config=dynamic_config,
+    masked_preprocessor_config=settings.masked_preprocessor_config,
+    dynamic_avoider_config=settings.dynamic_avoider_config,
+    predictor_config=settings.predictor_config,
 )
 
 # Perform masked pathfinding with fine-tuning
@@ -363,8 +317,22 @@ result = avoider.perform_pathfinding_with_finetuning_masked(
     time_keys=time_keys,
     dict_obstacles=dict_obstacles,
     masking_strategy="wide",  # "center", "left", "right", or "wide"
+    prediction_mode="deterministic",  # or "predictive"
 )
+
+# Access results
+print(f"Success: {result.success}")
+print(f"Path valid: {result.is_pred_path_valid}")  # Only in predictive mode
 ```
+
+#### Prediction Modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `deterministic` | Uses actual radar data for all time steps | Real-time pathfinding with current data |
+| `predictive` | Uses ML predictions for future time steps | Proactive route planning |
+
+In `predictive` mode, the `is_pred_path_valid` field indicates whether the computed path is valid when validated against the actual (not predicted) obstacles.
 
 #### Masking Strategies
 
@@ -383,7 +351,7 @@ The thunderstorm prediction module uses Seq2Seq deep learning models to predict 
 
 ```python
 from shapely import Point
-from thund_avoider.services.masked_dynamic_avoider import ThunderstormPredictor, MaskedDynamicAvoider
+from thund_avoider.services.masked_dynamic_avoider import MaskedDynamicAvoider
 from thund_avoider.schemas.masked_dynamic_avoider import DirectionVector
 from thund_avoider.settings import settings
 
@@ -395,14 +363,16 @@ avoider = MaskedDynamicAvoider(
 )
 
 # Perform pathfinding with ML-based predictions
-result = avoider.perform_pathfinding_with_predictions(
+result = avoider.perform_pathfinding_with_finetuning_masked(
     current_pos=Point(300000, 6800000),
     end=Point(400000, 6900000),
     current_time_index=0,
     window_size=3,
+    num_preds=7,
     time_keys=time_keys,
     dict_obstacles=dict_obstacles,
-    prediction_strategy="concave",  # or "convex"
+    prediction_mode="predictive",  # Uses ML predictions
+    masking_strategy="wide",
 )
 ```
 
@@ -427,23 +397,14 @@ result = avoider.perform_pathfinding_with_predictions(
 #### Direct Predictor Usage
 
 ```python
+from shapely import Point
 from thund_avoider.services.masked_dynamic_avoider import ThunderstormPredictor
 from thund_avoider.services.masked_dynamic_avoider.masked_preprocessor import MaskedPreprocessor
-from thund_avoider.settings import PredictorConfig, MaskedPreprocessorConfig
-from shapely import Point
+from thund_avoider.settings import settings
 from thund_avoider.schemas.masked_dynamic_avoider import DirectionVector
 
-config = PredictorConfig(
-    model_type="ConvLSTM",
-    checkpoints_dir=Path("thund_avoider/models/checkpoints"),
-    image_size=256,
-    input_frames=6,
-    output_frames=6,
-    delta_minutes=5,
-)
-
-preprocessor = MaskedPreprocessor(MaskedPreprocessorConfig())
-predictor = ThunderstormPredictor(config, preprocessor)
+preprocessor = MaskedPreprocessor(settings.masked_preprocessor_config)
+predictor = ThunderstormPredictor(settings.predictor_config, preprocessor)
 
 # Generate predictions
 result = predictor.predict(
@@ -514,7 +475,34 @@ Available notebooks:
 
 ## Configuration
 
-All configurations are managed via Pydantic models in `thund_avoider/settings.py`.
+All configurations are managed via Pydantic models in `thund_avoider/settings.py`. Use the global `settings` instance for default configurations:
+
+```python
+from thund_avoider.settings import settings
+
+# Access default configurations
+parser_config = settings.parser_config
+preprocessor_config = settings.preprocessor_config
+masked_preprocessor_config = settings.masked_preprocessor_config
+static_avoider_config = settings.static_avoider_config
+dynamic_avoider_config = settings.dynamic_avoider_config
+predictor_config = settings.predictor_config
+```
+
+### ParserConfig
+
+```python
+from thund_avoider.settings import ParserConfig
+
+config = ParserConfig(
+    first_date=datetime(2020, 12, 31, 23, 55),  # Start date
+    last_date=datetime(2024, 7, 31, 23, 55),    # End date
+    delta_minutes=5,                             # Time step in minutes
+    intensity_threshold=100,                     # Min pixel intensity
+    min_pixels=9000,                             # Min pixels for segment
+    image_size=256,                              # Output image size
+)
+```
 
 ### PreprocessorConfig
 
@@ -522,7 +510,6 @@ All configurations are managed via Pydantic models in `thund_avoider/settings.py
 from thund_avoider.settings import PreprocessorConfig
 
 config = PreprocessorConfig(
-    base_url="https://fmi-opendata-{}-radar-tutorial.s3-flash-{}",
     intensity_threshold_low=100,    # Min pixel intensity (0-255)
     intensity_threshold_high=255,   # Max pixel intensity (0-255)
     distance_between=25000,         # 25 * 2 km min distance between storms
@@ -551,7 +538,6 @@ config = StaticAvoiderConfig(
     buffer=5000,           # 5km additional buffer around obstacles
     tolerance=5000,        # 5km geometry simplification tolerance
     bbox_buffer=50000,     # 50km buffer around start/end points
-    strategy="concave",    # "concave" or "convex"
 )
 ```
 
@@ -561,19 +547,21 @@ config = StaticAvoiderConfig(
 from thund_avoider.settings import DynamicAvoiderConfig
 
 config = DynamicAvoiderConfig(
-    crs="EPSG:3067",              # Coordinate reference system
-    velocity_kmh=900,             # Aircraft speed in km/h
-    delta_minutes=5,              # Time step in minutes
-    buffer=5000,                  # Obstacle buffer in meters
-    tolerance=5000,               # Simplification tolerance
-    k_neighbors=10,               # KNN neighbors for graph
-    max_distance=5000,            # Max segment for densification
-    simplification_tolerance=1000,
-    smooth_tolerance=2000,
-    max_iter=100,
-    delta_length=100,
-    strategy="concave",           # "concave" or "convex"
-    tuning_strategy="greedy",     # "greedy" or "smooth"
+    # GraphBuilderConfig
+    graph_builder_config=GraphBuilderConfig(
+        crs=3067,                  # Coordinate reference system
+        buffer=5000,               # Obstacle buffer in meters
+        tolerance=5000,            # Simplification tolerance
+        k_neighbors=10,            # KNN neighbors for graph
+        strategy="concave",        # "concave" or "convex"
+    ),
+    # FineTunerConfig
+    fine_tuner_config=FineTunerConfig(
+        max_distance=20000,            # Max segment for densification
+        velocity_kmh=900,              # Aircraft speed in km/h
+        delta_minutes=5,               # Time step in minutes
+        tuning_strategy="greedy",      # "greedy" or "smooth"
+    ),
 )
 ```
 
@@ -583,7 +571,7 @@ config = DynamicAvoiderConfig(
 from thund_avoider.settings import PredictorConfig
 
 config = PredictorConfig(
-    model_type="ConvLSTM",        # Model type: RNN, LSTM, GRU, ConvRNN, ConvLSTM, ConvGRU
+    model_type="ConvGRU",         # Model type: RNN, LSTM, GRU, ConvRNN, ConvLSTM, ConvGRU
     checkpoints_dir=Path("thund_avoider/models/checkpoints"),
     input_channels=1,             # Number of input channels
     hidden_channels=64,           # Hidden layer size
@@ -594,7 +582,6 @@ config = PredictorConfig(
     input_frames=6,               # Number of input frames (30 min history)
     output_frames=6,              # Number of output frames (30 min prediction)
     delta_minutes=5,              # Time step between frames
-    intensity_threshold=100,      # Pixel intensity threshold
 )
 ```
 
@@ -606,7 +593,7 @@ config = PredictorConfig(
 
 | Method | Description |
 |--------|-------------|
-| `get_data(year_month_start, year_month_end)` | Download and process radar data |
+| `get_data()` | Download and process radar data for configured date range |
 | `save_to_numpy(data, year_month)` | Save processed data as .npy files |
 | `count_informative_segments(tif_path)` | Filter low-quality segments |
 
@@ -614,18 +601,14 @@ config = PredictorConfig(
 
 | Method | Description |
 |--------|-------------|
-| `get_gpd_for_current_date(current_date, tif_path)` | Process raster to polygons |
+| `get_gdf_for_current_date(current_date)` | Process raster to polygons |
 | `save_geodataframe_to_csv(gdf, path)` | Save polygons to CSV |
-| `_convert_raster_to_polygons(tif_path)` | Raster to vector conversion |
-| `_union_polygons(polygons, strategy)` | Generate hulls |
 
 ### StaticAvoider
 
 | Method | Description |
 |--------|-------------|
 | `find_shortest_path(gdf, strategy, A, B)` | Find path around obstacles |
-| `_build_visibility_graph(vertices, obstacles)` | Create visibility graph |
-| `_is_line_valid(line, obstacles)` | Check line-obstacle intersection |
 
 ### DynamicAvoider
 
@@ -635,8 +618,6 @@ config = PredictorConfig(
 | `collect_obstacles(directory_path, time_keys)` | Load obstacles for all times |
 | `create_master_graph(time_keys, dict_obstacles)` | Build master graph |
 | `sliding_window_pathfinding(...)` | Main dynamic pathfinding |
-| `_greedy_fine_tuning(path, time_keys, strtrees)` | Greedy optimization |
-| `_smooth_fine_tuning(path, time_keys, strtrees)` | Smooth optimization |
 
 ### MaskedDynamicAvoider
 
@@ -644,8 +625,12 @@ config = PredictorConfig(
 |--------|-------------|
 | `perform_pathfinding_masked(...)` | Masked sliding window pathfinding |
 | `perform_pathfinding_with_finetuning_masked(...)` | Masked pathfinding with fine-tuning |
-| `_create_direction_vector(path)` | Create direction vector from path |
-| `_prepare_obstacles(...)` | Prepare obstacles with spatial masking |
+
+### ThunderstormPredictor
+
+| Method | Description |
+|--------|-------------|
+| `predict(time_keys, current_time_index, ...)` | Generate thunderstorm predictions |
 
 ---
 
@@ -690,14 +675,23 @@ WxRADNet-PyTorch/
 │   ├── schemas/
 │   │   ├── dynamic_avoider.py         # Path result models
 │   │   ├── masked_dynamic_avoider.py  # Masked path result models
+│   │   ├── predictor.py               # Predictor result models
 │   │   └── preprocessor.py            # Preprocessor schemas
 │   ├── services/
-│   │   ├── dynamic_avoider.py         # Dynamic pathfinding
+│   │   ├── utils.py                   # Shared utilities
 │   │   ├── static_avoider.py          # Static pathfinding
 │   │   ├── preprocessor.py            # Raster to vector processing
+│   │   ├── dynamic_avoider/
+│   │   │   ├── __init__.py
+│   │   │   ├── core.py                # Main orchestrator
+│   │   │   ├── graph_builder.py       # Master graph construction
+│   │   │   ├── fine_tuner.py          # Path fine-tuning
+│   │   │   └── data_loader.py         # Obstacle data loading
 │   │   └── masked_dynamic_avoider/
+│   │       ├── __init__.py
 │   │       ├── masked_dynamic_avoider.py
-│   │       └── masked_preprocessor.py
+│   │       ├── masked_preprocessor.py
+│   │       └── predictor.py           # Thunderstorm prediction
 │   ├── models/
 │   │   ├── rnn.py                     # RNN/LSTM/GRU models
 │   │   ├── conv_rnn.py                # ConvRNN model
@@ -705,10 +699,12 @@ WxRADNet-PyTorch/
 │   │   ├── conv_gru.py                # ConvGRU model
 │   │   └── checkpoints/               # Pre-trained weights
 │   └── scripts/
+│       ├── utils.py                   # Script utilities
 │       ├── run_parser.py              # Data pipeline script
 │       ├── run_preprocessor.py        # Preprocessing script
 │       ├── run_static_avoider.py      # Static pathfinding script
-│       └── run_dynamic_avoider.py     # Dynamic pathfinding script
+│       ├── run_dynamic_avoider.py     # Dynamic pathfinding script
+│       └── run_masked_dynamic_avoider.py  # Masked dynamic pathfinding
 ├── notebooks/                         # Training notebooks
 ├── config/                            # Configuration files
 │   ├── timestamps.pkl

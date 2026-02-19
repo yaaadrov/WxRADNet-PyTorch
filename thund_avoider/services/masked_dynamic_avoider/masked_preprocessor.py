@@ -35,6 +35,7 @@ class MaskedPreprocessor(Preprocessor):
 
     @staticmethod
     def _normalize_direction_vector(direction_vector: DirectionVector) -> tuple[float, float]:
+        """Normalize direction vector to unit length."""
         mag = math.sqrt(direction_vector.dx ** 2 + direction_vector.dy ** 2)
         if np.isclose(mag, 0, atol=1e-6):
             raise ValueError("Direction vector magnitude cannot be zero")
@@ -49,6 +50,20 @@ class MaskedPreprocessor(Preprocessor):
         ux: float,
         uy: float,
     ) -> tuple[float, float, tuple[float, float]]:
+        """
+        Calculate center offset and output shape for raster cropping.
+
+        Args:
+            strategy: Cropping strategy.
+            current_position: Aircraft position.
+            pixel_width: Width in pixels.
+            half_side: Half of the square side length.
+            ux: Unit vector x component.
+            uy: Unit vector y component.
+
+        Returns:
+            Tuple of (center_x, center_y, (rows, cols)).
+        """
         lx, ly = -uy, ux  # Perpendicular vector (Points to the LEFT of the direction)
         match strategy:
             case "left":  # Move half-side Forward, and half-side Left
@@ -75,6 +90,17 @@ class MaskedPreprocessor(Preprocessor):
         side: float,
         half_side: float,
     ) -> tuple[float, float, float]:
+        """
+        Calculate width and offsets for polygon bounding box.
+
+        Args:
+            strategy: Cropping strategy.
+            side: Square side length.
+            half_side: Half of the square side length.
+
+        Returns:
+            Tuple of (width, offset_forward, offset_sideways).
+        """
         match strategy:
             case "left":  # Center is half-side forward, half-side to the LEFT
                 width = side
@@ -185,6 +211,7 @@ class MaskedPreprocessor(Preprocessor):
         direction_vector: DirectionVector,
         strategy: Literal["center", "left", "right", "wide"] = "center",
     ) -> Polygon:
+        """Get an oriented bounding box polygon based on position and direction."""
         ux, uy = self._normalize_direction_vector(direction_vector)
         lx, ly = -uy, ux
         half_side = self.square_side_length_m / 2
@@ -219,7 +246,7 @@ class MaskedPreprocessor(Preprocessor):
         geometry: list[Polygon],
         bbox: Polygon,
     ) -> list[Polygon]:
-        """Crop a list of polygons to a square of a given size based on given direction"""
+        """Clip polygons to bounding box, returning only the intersecting portions."""
         tree = STRtree(geometry)
         indices = tree.query(bbox, predicate="intersects")
         cropped_result = []
@@ -238,7 +265,7 @@ class MaskedPreprocessor(Preprocessor):
         geometry: list[Polygon],
         bbox: Polygon,
     ) -> Polygon:
-        """Identify parts of the bbox edges that are inside obstacles and create a buffer around"""
+        """Identify bbox corners inside obstacles and create prohibited buffer zone outside bbox."""
         merged_obstacles = unary_union(geometry)
         coords = list(bbox.exterior.coords)[:-1]
         corners = [Point(c) for c in coords]
@@ -249,58 +276,3 @@ class MaskedPreprocessor(Preprocessor):
         prohibited_zone = corner_collection.buffer(self.bbox_buffer_m)
         prohibited_outside = prohibited_zone.difference(bbox)
         return prohibited_outside
-
-    # def get_prohibited_boundary_zone(  # Вариант 1 - без углов
-    #     self,
-    #     geometry: list[Polygon],
-    #     bbox: Polygon,
-    # ) -> Polygon:
-    #     """Identify parts of the bbox edges that are inside obstacles and create a buffer around"""
-    #     merged_obstacles = unary_union(geometry)
-    #     boundary_line = bbox.boundary
-    #     intersected_edges = boundary_line.intersection(merged_obstacles)
-    #     if intersected_edges.is_empty:
-    #         return Polygon()
-    #     prohibited_zone = intersected_edges.buffer(self.bbox_buffer_m)
-    #     prohibited_outside = prohibited_zone.difference(bbox)
-    #     return prohibited_outside
-
-    # def get_prohibited_boundary_zone(  # Вариант 2 - угловые составляющие bbox
-    #     self,
-    #     geometry: list[Polygon],
-    #     bbox: Polygon,
-    # ) -> Polygon:
-    #     """Identify parts of the bbox edges that are inside obstacles and create a buffer around"""
-    #     merged_obstacles = unary_union(geometry)
-    #
-    #     # Identify corners inside obstacles
-    #     coords = list(bbox.exterior.coords)[:-1]
-    #     corners = [Point(c) for c in coords]
-    #     intersected_corners = [p for p in corners if p.intersects(merged_obstacles)]
-    #     if not intersected_corners:
-    #         return Polygon()
-    #
-    #     # Get all edge segments that are inside obstacles
-    #     boundary_line = bbox.boundary
-    #     all_intersected_edges = boundary_line.intersection(merged_obstacles)
-    #     if all_intersected_edges.is_empty:
-    #         return Polygon()
-    #
-    #     # Filter segments: keep only those that touch an intersected corner
-    #     if isinstance(all_intersected_edges, LineString):
-    #         segments = [all_intersected_edges]
-    #     else:
-    #         segments = list(all_intersected_edges.geoms)
-    #     valid_segments = []
-    #     for seg in segments:
-    #         if any(seg.intersects(corner) for corner in intersected_corners):
-    #             valid_segments.append(seg)
-    #     if not valid_segments:
-    #         return Polygon()
-    #
-    #     # Buffer the valid segments and return the area outside the bbox
-    #     intersected_edges_valid = unary_union(valid_segments)
-    #     prohibited_zone = intersected_edges_valid.buffer(self.bbox_buffer_m)
-    #     prohibited_outside = prohibited_zone.difference(bbox)
-    #
-    #     return prohibited_outside

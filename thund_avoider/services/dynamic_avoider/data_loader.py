@@ -8,7 +8,10 @@ from thund_avoider.settings import DataLoaderConfig
 
 
 class DataLoader:
+    """Handles loading and saving of obstacle data from CSV files."""
+
     def __init__(self, config: DataLoaderConfig) -> None:
+        """Initialize DataLoader with configuration."""
         self._config = config
 
     @staticmethod

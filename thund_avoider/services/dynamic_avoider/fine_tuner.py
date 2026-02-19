@@ -18,7 +18,10 @@ from thund_avoider.settings import FineTunerConfig
 
 
 class FineTuner:
+    """Path fine-tuning with greedy shortcut and smooth angle optimization strategies."""
+
     def __init__(self, config: FineTunerConfig) -> None:
+        """Initialize FineTuner with configuration."""
         self._config = config
         self._velocity_mpm = config.velocity_kmh * 1000 / 60
         self._logger = logging.getLogger(__name__)
