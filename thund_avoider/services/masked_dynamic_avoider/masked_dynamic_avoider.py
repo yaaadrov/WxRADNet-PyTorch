@@ -6,7 +6,6 @@ import geopandas as gpd
 import networkx as nx
 import numpy as np
 from shapely import Point, Polygon, STRtree
-from shapely.geometry import LineString
 from shapely.ops import unary_union
 
 from thund_avoider.schemas.dynamic_avoider import SlidingWindowPath, FineTunedPath
