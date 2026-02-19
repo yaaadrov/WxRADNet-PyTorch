@@ -1,13 +1,16 @@
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 import affine
 import geopandas as gpd
 import networkx as nx
 import numpy as np
+import pandas as pd
 import rasterio
 import rasterio.features
 from concave_hull import concave_hull
+from rasterio import Env
 from shapely.geometry import shape, Polygon, MultiPolygon
 from shapely.ops import unary_union
 
@@ -35,7 +38,7 @@ class Preprocessor:
         self.distance_between = config.distance_between
         self.distance_avoid = config.distance_avoid
 
-    def _generate_url(self, current_date: datetime) -> str:
+    def generate_url(self, current_date: datetime) -> str:
         """Generate URL with correct datetime values"""
         return self.base_url.format(
             year=current_date.year,
@@ -122,8 +125,23 @@ class Preprocessor:
             return Polygon(concave_hull(points, concavity=1.0))
         raise ValueError('Shapely Polygon or MultiPolygon should be passed as an argument')
 
-    def _union_polygons(self, gdf: gpd.GeoDataFrame, crs: rasterio.crs.CRS) -> gpd.GeoDataFrame:
-        """Union shapely Polygons within groups and create convex and concave hulls"""
+    def _union_polygons(
+        self,
+        gdf: gpd.GeoDataFrame,
+        crs: rasterio.crs.CRS,
+        strategy: Literal["concave", "convex", "both"] = "both",
+    ) -> gpd.GeoDataFrame:
+        """
+        Union polygons within groups and create hulls for specified strategy.
+
+        Args:
+            gdf: GeoDataFrame with grouped polygons.
+            crs: Coordinate reference system.
+            strategy: Hull strategy - "concave", "convex", or "both".
+
+        Returns:
+            gpd.GeoDataFrame: Unioned polygons with hull geometry column(s).
+        """
         polygons_union = [
             unary_union(gdf[gdf["group"] == group].geometry)
             for group in gdf["group"].unique()
@@ -134,19 +152,65 @@ class Preprocessor:
         ]
         gdf_union = gpd.GeoDataFrame(geometry=polygons_union, crs=crs)
         gdf_union["buffer"] = gpd.GeoDataFrame(geometry=polygons_union_buffer, crs=crs)
-        gdf_union["convex"] = gdf_union["buffer"].convex_hull
-        gdf_union["concave"] = gdf_union["buffer"].apply(self._concave_from_multipolygon)
+
+        match strategy:
+            case "concave":
+                gdf_union["concave"] = gdf_union["buffer"].apply(self._concave_from_multipolygon)
+            case "convex":
+                gdf_union["convex"] = gdf_union["buffer"].convex_hull
+            case "both":
+                gdf_union["convex"] = gdf_union["buffer"].convex_hull
+                gdf_union["concave"] = gdf_union["buffer"].apply(self._concave_from_multipolygon)
+
         return gdf_union
+
+    def prediction_to_polygons(
+        self,
+        prediction: np.ndarray,
+        transform: affine.Affine,
+        crs: rasterio.crs.CRS,
+        strategy: Literal["concave", "convex"],
+    ) -> list[Polygon]:
+        """
+        Convert a prediction raster frame to polygon obstacles.
+
+        Args:
+            prediction: Single prediction frame (2D or 3D with channel first).
+            transform: Affine transform for coordinate mapping.
+            crs: Coordinate reference system.
+            strategy: Hull strategy ("concave" or "convex").
+
+        Returns:
+            list[Polygon]: List of obstacle polygons.
+        """
+        if prediction.ndim == 3:
+            prediction = prediction[0]
+        mask = self._apply_mask(prediction)  # (prediction > intensity_threshold_low) & (prediction < intensity_threshold_high)
+        polygons = self._convert_raster_to_polygons(mask, transform)
+        if not polygons:
+            return []
+        gdf = self._create_geodataframe(polygons, crs)
+        gdf = self._calculate_buffers(gdf)
+        gdf = self._assign_groups(gdf)
+        gdf_union = self._union_polygons(gdf, crs, strategy=strategy)
+        return gdf_union[strategy].tolist()
 
     def save_raster_from_url(self, current_date: datetime, output_path: Path):
         """Compress and save raster GeoTIFF file from URL"""
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        url = self._generate_url(current_date)
+        url = self.generate_url(current_date)
         with rasterio.open(url) as src:
             profile = src.profile
             profile.update(RasterioCompressionSchema().model_dump())
             with rasterio.open(output_path, "w", **profile) as dst:
                 dst.write(src.read())
+
+    @staticmethod
+    def get_res_raster(url: str | Path) -> int:
+        """Get raster image resolution in meters/pixel."""
+        with rasterio.open(url) as dataset:
+            res = dataset.res[0]
+        return res
 
     @staticmethod
     def load_raster_data(url: str | Path) -> tuple[np.ndarray, affine.Affine, rasterio.crs.CRS]:
@@ -167,9 +231,9 @@ class Preprocessor:
         """Load GeoDataFrame from a CSV file"""
         return DataLoader.load_geodataframe_from_csv(file_path)
 
-    def get_gpd_for_current_date(self, current_date: datetime) -> gpd.GeoDataFrame:
+    def get_gdf_for_current_date(self, current_date: datetime) -> gpd.GeoDataFrame:
         """Get gpd.GeoDataFrame for required timestamp"""
-        url = self._generate_url(current_date)
+        url = self.generate_url(current_date)
         band, transform, crs = self.load_raster_data(url)
         mask = self._apply_mask(band)
         polygons = self._convert_raster_to_polygons(mask, transform)

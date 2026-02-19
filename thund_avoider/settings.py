@@ -3,8 +3,12 @@ from pathlib import Path
 from typing import Final, Literal
 
 from pydantic import BaseModel
+from torch import device
+
+from thund_avoider.schemas.predictor import ModelType
 
 ROOT_PATH: Final = Path(__file__).resolve().parents[1]
+THUND_AVOIDER_PATH: Final = Path(__file__).resolve().parent
 PARSER_DATA_PATH: Final = ROOT_PATH / "parser_data"
 PARSER_RESULT_PATH: Final = PARSER_DATA_PATH / "thunderstorm_data.npy"
 DATA_PATH: Final = ROOT_PATH / "data"
@@ -12,6 +16,7 @@ IMAGES_PATH: Final = ROOT_PATH / "images"
 RESULT_PATH: Final = ROOT_PATH / "results"
 TIMESTAMPS_PATH: Final = ROOT_PATH / "config" / "timestamps.pkl"
 AB_POINTS_PATH: Final = ROOT_PATH / "config" / "ab_points.pkl"
+MODELS_PATH: Final = THUND_AVOIDER_PATH / "models"
 
 
 # =============================================================================
@@ -45,6 +50,7 @@ class ParserConfig(BaseModel):
         CropBorderConfig(y_start=4000, y_end=5000, x_start=2500, x_end=3500),
         CropBorderConfig(y_start=5000, y_end=6000, x_start=1600, x_end=2600),
     ]
+    gtiff_srs: str = "EPSG"
 
     @property
     def delta(self) -> timedelta:
@@ -119,6 +125,35 @@ class DynamicAvoiderConfig(BaseModel):
 
 
 # =============================================================================
+# Predictor Configuration
+# =============================================================================
+
+class PredictorConfig(BaseModel):
+    """Configuration for ThunderstormPredictor component."""
+
+    model_type: ModelType = ModelType.CONV_GRU
+    checkpoints_dir: Path = MODELS_PATH / "checkpoints"
+    input_channels: int = 1
+    hidden_channels: int = 64
+    output_channels: int = 1
+    kernel_size: int = 3
+    num_layers: int = 2
+    image_size: int = 256
+    input_frames: int = 6
+    output_frames: int = 6
+    delta_minutes: int = 5
+    # intensity_threshold: int = 100
+    # max_intensity_threshold: int = 255
+
+    @property
+    def device(self) -> device:
+        """Get the device for model inference."""
+        import torch
+
+        return device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+# =============================================================================
 # Settings
 # =============================================================================
 
@@ -128,6 +163,7 @@ class Settings(BaseModel):
     masked_preprocessor_config: MaskedPreprocessorConfig = MaskedPreprocessorConfig()
     static_avoider_config: StaticAvoiderConfig = StaticAvoiderConfig()
     dynamic_avoider_config: DynamicAvoiderConfig = DynamicAvoiderConfig()
+    predictor_config: PredictorConfig = PredictorConfig()
 
 
 settings = Settings()

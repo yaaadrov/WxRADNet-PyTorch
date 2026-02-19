@@ -32,7 +32,7 @@ def process_csv(
         print(f"{i + 1:<{length}}/{iterations}: Error – could not find any data for {current_date}")
         return
     try:
-        gdf_union = preprocessor.get_gpd_for_current_date(current_date)
+        gdf_union = preprocessor.get_gdf_for_current_date(current_date)
         preprocessor.save_geodataframe_to_csv(gdf_union, path_to_csv)
         status = "ready" if depth == 0 else f"ready (fallback from {depth} intervals ago)"
         print(f"{i + 1:<{length}}/{iterations}: {current_date} DataFrame {status}")

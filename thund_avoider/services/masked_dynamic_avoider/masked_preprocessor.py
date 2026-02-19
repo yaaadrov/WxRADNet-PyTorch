@@ -94,6 +94,55 @@ class MaskedPreprocessor(Preprocessor):
                 offset_side = 0
         return width, offset_fwd, offset_side
 
+    def build_transform(
+        self,
+        current_position: Point,
+        direction_vector: DirectionVector,
+        strategy: Literal["center", "left", "right", "wide"],
+        res: float,
+        pixel_width: int | None = None,
+    ) -> tuple[Affine, tuple[int, int]]:
+        """
+        Build affine transform for cropping/prediction without loading raster data.
+
+        Args:
+            current_position: Aircraft position.
+            direction_vector: Direction vector for cropping.
+            strategy: Cropping strategy.
+            res: Pixel resolution in meters.
+            pixel_width: Optional override for pixel width. If None, calculated from res.
+
+        Returns:
+            tuple[Affine, tuple[int, int]]: Affine transform and (rows, cols) shape.
+        """
+        calculated_pixel_width = int(self.square_side_length_m // res)
+        actual_pixel_width = pixel_width if pixel_width is not None else calculated_pixel_width
+        effective_res = self.square_side_length_m / actual_pixel_width
+
+        half_side = self.square_side_length_m / 2
+        ux, uy = self._normalize_direction_vector(direction_vector)
+
+        center_x, center_y, (rows, cols) = self._get_center_offset_raster(
+            strategy=strategy,
+            current_position=current_position,
+            pixel_width=actual_pixel_width,
+            half_side=half_side,
+            ux=ux,
+            uy=uy,
+        )
+
+        angle_rad = math.atan2(uy, ux)
+        rotation_deg = math.degrees(angle_rad) - 90
+
+        transform = (
+            Affine.translation(center_x, center_y)
+            * Affine.rotation(rotation_deg)
+            * Affine.translation(-cols / 2 * effective_res, rows / 2 * effective_res)
+            * Affine.scale(effective_res, -effective_res)
+        )
+
+        return transform, (rows, cols)
+
     def fetch_and_crop_raster_data(
         self,
         url: str | Path,
@@ -111,34 +160,11 @@ class MaskedPreprocessor(Preprocessor):
             strategy (Literal["center", "left", "right", "wide"]): Strategy to crop
         """
         with rasterio.open(url) as dataset:
-            res = dataset.res[0]  # Pixel size
-            pixel_width = int(self.square_side_length_m // res)  # Square size in pixels
-            half_side = self.square_side_length_m / 2
-            ux, uy = self._normalize_direction_vector(direction_vector)
-
-            # Calculate offset
-            center_x, center_y, (rows, cols) = self._get_center_offset_raster(
-                strategy=strategy,
-                current_position=current_position,
-                pixel_width=pixel_width,
-                half_side=half_side,
-                ux=ux,
-                uy=uy,
+            res = dataset.res[0]
+            dst_transform, (rows, cols) = self.build_transform(
+                current_position, direction_vector, strategy, res
             )
 
-            # Calculate rotation angle for the Affine transform
-            angle_rad = math.atan2(uy, ux)
-            rotation_deg = math.degrees(angle_rad) - 90
-
-            # Construct the Destination Transform
-            dst_transform = (
-                Affine.translation(center_x, center_y) *
-                Affine.rotation(rotation_deg) *
-                Affine.translation(-cols / 2 * res, rows / 2 * res) *
-                Affine.scale(res, -res)
-            )
-
-            # Reproject the data
             dest_data = np.empty((rows, cols), dtype=dataset.dtypes[0])
             reproject(
                 source=rasterio.band(dataset, 1),
@@ -147,7 +173,8 @@ class MaskedPreprocessor(Preprocessor):
                 src_crs=dataset.crs,
                 dst_transform=dst_transform,
                 dst_crs=dataset.crs,
-                resampling=Resampling.bilinear
+                resampling=Resampling.bilinear,
+                dst_nodata=0,
             )
 
         return dest_data, dst_transform, dataset.crs
