@@ -19,6 +19,7 @@ A comprehensive framework for **aircraft thunderstorm avoidance** using deep lea
   - [Static Pathfinding](#static-pathfinding)
   - [Dynamic Pathfinding](#dynamic-pathfinding)
   - [Masked Dynamic Pathfinding](#masked-dynamic-pathfinding)
+  - [Thunderstorm Prediction](#thunderstorm-prediction)
   - [Deep Learning Models](#deep-learning-models)
 - [Configuration](#configuration)
 - [API Reference](#api-reference)
@@ -220,17 +221,17 @@ from thund_avoider.services.preprocessor import Preprocessor
 from thund_avoider.settings import PreprocessorConfig
 
 config = PreprocessorConfig(
-    intensity_threshold_low=100,
-    intensity_threshold_high=255,
-    distance_between=50000,
-    distance_avoid=15000,
+  intensity_threshold_low=100,
+  intensity_threshold_high=255,
+  distance_between=50000,
+  distance_avoid=15000,
 )
 
 preprocessor = Preprocessor(config)
 
 # Process a specific timestamp
-gdf = preprocessor.get_gpd_for_current_date(
-    current_date=datetime(2024, 5, 30, 15, 0),
+gdf = preprocessor.get_gdf_for_current_date(
+  current_date=datetime(2024, 5, 30, 15, 0),
 )
 
 # Save to CSV
@@ -374,6 +375,90 @@ result = avoider.perform_pathfinding_with_finetuning_masked(
 | `right` | Offset to the right of direction | Avoiding left-side obstacles |
 | `wide` | Doubled width for wider coverage | Complex obstacle fields |
 
+### Thunderstorm Prediction
+
+The thunderstorm prediction module uses Seq2Seq deep learning models to predict future thunderstorm positions based on historical radar imagery.
+
+#### Using the ThunderstormPredictor
+
+```python
+from shapely import Point
+from thund_avoider.services.masked_dynamic_avoider import ThunderstormPredictor, MaskedDynamicAvoider
+from thund_avoider.schemas.masked_dynamic_avoider import DirectionVector
+from thund_avoider.settings import settings
+
+# Initialize predictor with MaskedDynamicAvoider
+avoider = MaskedDynamicAvoider(
+    masked_preprocessor_config=settings.masked_preprocessor_config,
+    dynamic_avoider_config=settings.dynamic_avoider_config,
+    predictor_config=settings.predictor_config,  # Enables predictions
+)
+
+# Perform pathfinding with ML-based predictions
+result = avoider.perform_pathfinding_with_predictions(
+    current_pos=Point(300000, 6800000),
+    end=Point(400000, 6900000),
+    current_time_index=0,
+    window_size=3,
+    time_keys=time_keys,
+    dict_obstacles=dict_obstacles,
+    prediction_strategy="concave",  # or "convex"
+)
+```
+
+#### Prediction Pipeline
+
+1. **Input**: 6 historical radar images (30 minutes of history at 5-min intervals)
+2. **Processing**: Images are cropped using "left" and "right" strategies, resized to 256x256
+3. **Inference**: Seq2Seq model predicts 6 future frames (30 minutes ahead)
+4. **Output**: Obstacle polygons for each future time step
+
+#### Available Model Types
+
+| Model | Type | Checkpoint |
+|-------|------|------------|
+| `RNN` | Standard RNN | `checkpoints/RNN.pt` |
+| `LSTM` | Standard LSTM | `checkpoints/LSTM.pt` |
+| `GRU` | Standard GRU | `checkpoints/GRU.pt` |
+| `ConvRNN` | Convolutional RNN | `checkpoints/ConvRNN.pt` |
+| `ConvLSTM` | Convolutional LSTM | `checkpoints/ConvLSTM.pt` |
+| `ConvGRU` | Convolutional GRU | `checkpoints/ConvGRU.pt` |
+
+#### Direct Predictor Usage
+
+```python
+from thund_avoider.services.masked_dynamic_avoider import ThunderstormPredictor
+from thund_avoider.services.masked_dynamic_avoider.masked_preprocessor import MaskedPreprocessor
+from thund_avoider.settings import PredictorConfig, MaskedPreprocessorConfig
+from shapely import Point
+from thund_avoider.schemas.masked_dynamic_avoider import DirectionVector
+
+config = PredictorConfig(
+    model_type="ConvLSTM",
+    checkpoints_dir=Path("thund_avoider/models/checkpoints"),
+    image_size=256,
+    input_frames=6,
+    output_frames=6,
+    delta_minutes=5,
+)
+
+preprocessor = MaskedPreprocessor(MaskedPreprocessorConfig())
+predictor = ThunderstormPredictor(config, preprocessor)
+
+# Generate predictions
+result = predictor.predict(
+    time_keys=time_keys,
+    current_time_index=0,
+    current_position=Point(300000, 6800000),
+    direction_vector=DirectionVector(dx=100000, dy=100000),
+    strategy="concave",
+)
+
+# Access predicted obstacles
+for time_key, obstacles in result.obstacles_dict.items():
+    print(f"{time_key}: {len(obstacles['concave'])} obstacles")
+```
+
 ### Deep Learning Models
 
 #### Loading Pre-trained Models
@@ -489,6 +574,27 @@ config = DynamicAvoiderConfig(
     delta_length=100,
     strategy="concave",           # "concave" or "convex"
     tuning_strategy="greedy",     # "greedy" or "smooth"
+)
+```
+
+### PredictorConfig
+
+```python
+from thund_avoider.settings import PredictorConfig
+
+config = PredictorConfig(
+    model_type="ConvLSTM",        # Model type: RNN, LSTM, GRU, ConvRNN, ConvLSTM, ConvGRU
+    checkpoints_dir=Path("thund_avoider/models/checkpoints"),
+    input_channels=1,             # Number of input channels
+    hidden_channels=64,           # Hidden layer size
+    output_channels=1,            # Number of output channels
+    kernel_size=3,                # Convolution kernel size
+    num_layers=2,                 # Number of RNN layers
+    image_size=256,               # Input image size
+    input_frames=6,               # Number of input frames (30 min history)
+    output_frames=6,              # Number of output frames (30 min prediction)
+    delta_minutes=5,              # Time step between frames
+    intensity_threshold=100,      # Pixel intensity threshold
 )
 ```
 

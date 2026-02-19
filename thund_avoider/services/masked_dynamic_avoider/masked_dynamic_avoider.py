@@ -1,4 +1,3 @@
-import copy
 import itertools as it
 import math
 from typing import Literal
@@ -6,7 +5,7 @@ from typing import Literal
 import geopandas as gpd
 import networkx as nx
 import numpy as np
-from shapely import Point, Polygon, STRtree, MultiPolygon
+from shapely import Point, Polygon, STRtree
 from shapely.ops import unary_union
 
 from thund_avoider.schemas.dynamic_avoider import SlidingWindowPath, FineTunedPath
@@ -16,7 +15,8 @@ from thund_avoider.schemas.masked_dynamic_avoider import (
 )
 from thund_avoider.services.dynamic_avoider import DynamicAvoider
 from thund_avoider.services.masked_dynamic_avoider.masked_preprocessor import MaskedPreprocessor
-from thund_avoider.settings import MaskedPreprocessorConfig, DynamicAvoiderConfig
+from thund_avoider.services.masked_dynamic_avoider.predictor import ThunderstormPredictor
+from thund_avoider.settings import MaskedPreprocessorConfig, DynamicAvoiderConfig, PredictorConfig
 
 
 class MaskedDynamicAvoider(DynamicAvoider):
@@ -24,9 +24,11 @@ class MaskedDynamicAvoider(DynamicAvoider):
         self,
         masked_preprocessor_config: MaskedPreprocessorConfig,
         dynamic_avoider_config: DynamicAvoiderConfig,
+        predictor_config: PredictorConfig,
     ) -> None:
         super().__init__(dynamic_avoider_config)
         self.preprocessor = MaskedPreprocessor(masked_preprocessor_config)
+        self.predictor = ThunderstormPredictor(config=predictor_config, preprocessor=self.preprocessor)
 
     @staticmethod
     def _create_direction_vector(
@@ -71,6 +73,52 @@ class MaskedDynamicAvoider(DynamicAvoider):
         current_result.available_obstacles_dicts.append(available_obstacles_dict)
         return available_obstacles_dict
 
+    def _get_available_obstacles(
+        self,
+        current_pos: Point,
+        time_keys: list[str],
+        current_time_index: int,
+        num_preds: int,
+        dict_obstacles: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]],
+        current_direction_vector: DirectionVector,
+        clipping_bbox: Polygon,
+        prediction_mode: Literal["deterministic", "predictive"] = "deterministic",
+    ) -> tuple[list[str], dict[str, dict[str, list[Polygon]]]]:
+        match prediction_mode:
+            case "deterministic":
+                available_time_keys = time_keys[
+                    current_time_index : current_time_index + num_preds + 1
+                ]
+                available_obstacles_dict: dict[str, dict[str, list[Polygon]]] = {
+                    time_key: {
+                        self.strategy: self.preprocessor.clip_polygons(
+                            dict_obstacles[time_key][self.strategy].tolist(),
+                            bbox=clipping_bbox,
+                        )
+                    }
+                    for time_key in available_time_keys
+                }
+            case "predictive":
+                current_time_key = time_keys[current_time_index]
+                prediction_result = self.predictor.predict(
+                    time_keys=time_keys,
+                    current_time_index=current_time_index,
+                    current_position=current_pos,
+                    direction_vector=current_direction_vector,
+                    strategy=self.strategy,
+                )
+                available_time_keys = [current_time_key] + prediction_result.time_keys
+                available_obstacles_dict: dict[str, dict[str, list[Polygon]]] = {
+                    current_time_key: {
+                        self.strategy: self.preprocessor.clip_polygons(
+                            dict_obstacles[current_time_key][self.strategy].tolist(),
+                            bbox=clipping_bbox,
+                        )
+                    }
+                }
+                available_obstacles_dict.update(prediction_result.obstacles_dict)
+        return available_time_keys, available_obstacles_dict
+
     def _prepare_obstacles(
         self,
         current_result: SlidingWindowPathMasked | FineTunedPathMasked,
@@ -81,22 +129,23 @@ class MaskedDynamicAvoider(DynamicAvoider):
         dict_obstacles: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]],
         current_direction_vector: DirectionVector,
         masking_strategy: Literal["center", "left", "right", "wide"] = "wide",
+        prediction_mode: Literal["deterministic", "predictive"] = "deterministic",
     ) -> tuple[list[str], dict[str, dict[str, list[Polygon]]], Polygon]:
-        available_time_keys = time_keys[current_time_index:current_time_index + num_preds]
         clipping_bbox = self.preprocessor.get_oriented_bbox(
             current_position=current_pos,
             direction_vector=current_direction_vector,
             strategy=masking_strategy,
         )
-        available_obstacles_dict: dict[str, dict[str, list[Polygon]]] = {
-            time_key: {
-                self.strategy: self.preprocessor.clip_polygons(
-                    dict_obstacles[time_key][self.strategy].tolist(),
-                    bbox=clipping_bbox,
-                )
-            }
-            for time_key in available_time_keys
-        }
+        available_time_keys, available_obstacles_dict = self._get_available_obstacles(
+            current_pos=current_pos,
+            time_keys=time_keys,
+            current_time_index=current_time_index,
+            num_preds=num_preds,
+            dict_obstacles=dict_obstacles,
+            current_direction_vector=current_direction_vector,
+            clipping_bbox=clipping_bbox,
+            prediction_mode=prediction_mode,
+        )
         available_obstacles_dict_with_previous = self._add_previous_obstacles(
             current_result=current_result,
             available_obstacles_dict=available_obstacles_dict,
@@ -104,12 +153,9 @@ class MaskedDynamicAvoider(DynamicAvoider):
             current_time_index=current_time_index,
             clipping_bbox=clipping_bbox,
         )
-        # prohibited_boundary_zone = self.preprocessor.get_prohibited_boundary_zone(
-        #     geometry=list(it.chain(*[dict_obstacles[time_key][self.strategy].tolist()for time_key in available_time_keys])),
-        #     bbox=clipping_bbox,
-        # )
         prohibited_boundary_zone = Polygon()  # TODO: Remove prohibited_boundary_zone logic if unnecessary
         return available_time_keys, available_obstacles_dict_with_previous, prohibited_boundary_zone
+
 
     def _prepare_master_graph_local(
         self,
@@ -147,6 +193,7 @@ class MaskedDynamicAvoider(DynamicAvoider):
         time_keys: list[str],
         dict_obstacles: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]],
         masking_strategy: Literal["center", "left", "right", "wide"] = "wide",
+        prediction_mode: Literal["deterministic", "predictive"] = "deterministic",
     ) -> SlidingWindowPathMasked:
         result = SlidingWindowPathMasked(strategy=self.strategy)
         current_direction_vector = self._create_direction_vector([current_pos, end])
@@ -165,6 +212,7 @@ class MaskedDynamicAvoider(DynamicAvoider):
                 dict_obstacles=dict_obstacles,
                 current_direction_vector=current_direction_vector,
                 masking_strategy=masking_strategy,
+                prediction_mode=prediction_mode,
             )
             G_master_local, time_valid_edges_local, master_vertices_local, _ = self._prepare_master_graph_local(
                 available_time_keys=available_time_keys,  # Use only available time_keys
@@ -206,6 +254,7 @@ class MaskedDynamicAvoider(DynamicAvoider):
         time_keys: list[str],
         dict_obstacles: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]],
         masking_strategy: Literal["center", "left", "right", "wide"] = "wide",
+        prediction_mode: Literal["deterministic", "predictive"] = "deterministic",
     ) -> FineTunedPathMasked:
         result = FineTunedPathMasked(strategy=self.strategy)
         current_direction_vector = self._create_direction_vector([current_pos, end])
@@ -226,6 +275,7 @@ class MaskedDynamicAvoider(DynamicAvoider):
                 dict_obstacles=dict_obstacles,
                 current_direction_vector=current_direction_vector,
                 masking_strategy=masking_strategy,
+                prediction_mode=prediction_mode,
             )
             G_master_local, time_valid_edges_local, master_vertices_local, strtrees_local = self._prepare_master_graph_local(
                 available_time_keys=available_time_keys,  # Use only available time_keys

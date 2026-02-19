@@ -7,6 +7,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import rasterio
+from rasterio import Env
 
 from thund_avoider.settings import CropBorderConfig, ParserConfig, PARSER_DATA_PATH
 
