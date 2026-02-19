@@ -6,16 +6,20 @@ import geopandas as gpd
 import networkx as nx
 import numpy as np
 from shapely import Point, Polygon, STRtree
+from shapely.geometry import LineString
 from shapely.ops import unary_union
 
 from thund_avoider.schemas.dynamic_avoider import SlidingWindowPath, FineTunedPath
 from thund_avoider.schemas.masked_dynamic_avoider import (
-    DirectionVector, SlidingWindowPathMasked,
+    DirectionVector,
+    SlidingWindowPathMasked,
     FineTunedPathMasked,
 )
 from thund_avoider.services.dynamic_avoider import DynamicAvoider
+from thund_avoider.services.dynamic_avoider.fine_tuner import FineTuner
 from thund_avoider.services.masked_dynamic_avoider.masked_preprocessor import MaskedPreprocessor
 from thund_avoider.services.masked_dynamic_avoider.predictor import ThunderstormPredictor
+from thund_avoider.services.utils import is_line_valid
 from thund_avoider.settings import MaskedPreprocessorConfig, DynamicAvoiderConfig, PredictorConfig
 
 
@@ -87,7 +91,7 @@ class MaskedDynamicAvoider(DynamicAvoider):
         match prediction_mode:
             case "deterministic":
                 available_time_keys = time_keys[
-                    current_time_index : current_time_index + num_preds + 1
+                    current_time_index : current_time_index + num_preds
                 ]
                 available_obstacles_dict: dict[str, dict[str, list[Polygon]]] = {
                     time_key: {
@@ -183,6 +187,43 @@ class MaskedDynamicAvoider(DynamicAvoider):
         } if with_str_trees else None
         return G_master_local, time_valid_edges_local, master_vertices_local, strtrees
 
+    def _validate_path_against_initial_obstacles(
+        self,
+        path: list[Point],
+        time_keys: list[str],
+        dict_obstacles: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]],
+    ) -> bool:
+        """
+        Validate path against initial obstacles for each time step.
+
+        Used in predictive mode to verify the computed path is valid
+        against actual (not predicted) obstacles.
+
+        Args:
+            path: Flattened path points.
+            time_keys: Time keys corresponding to each path segment.
+            dict_obstacles: Initial obstacles dictionary.
+
+        Returns:
+            True if path is valid against all initial obstacles.
+        """
+        max_segment_length = self.velocity_mpm * self.delta_minutes
+        segments = FineTuner.split_path_into_segments(path, max_segment_length)
+        for i, segment in enumerate(segments):
+            if i >= len(time_keys):
+                break
+            time_key = time_keys[i]
+            if time_key not in dict_obstacles:
+                continue
+            obstacles = dict_obstacles[time_key][self.strategy]
+            obstacle_list = obstacles.tolist() if isinstance(obstacles, gpd.GeoSeries) else obstacles
+            if not is_line_valid(segment, obstacle_list):
+                self.logger.info(
+                    f"Predicted path validation failed at time_key={time_key}, segment={i}"
+                )
+                return False
+        return True
+
     def perform_pathfinding_masked(
         self,
         current_pos: Point,
@@ -240,6 +281,15 @@ class MaskedDynamicAvoider(DynamicAvoider):
         result.num_segments = current_time_index - 1
         if result.path and list(it.chain(*result.path))[-1] != end:
             result.path.append([end])
+
+        # Validate path against initial obstacles in predictive mode
+        if prediction_mode == "predictive" and result.path:
+            flat_path = [pt for segment in result.path for pt in segment]
+            result.is_pred_path_valid = self._validate_path_against_initial_obstacles(
+                path=flat_path,
+                time_keys=time_keys,
+                dict_obstacles=dict_obstacles,
+            )
 
         return result
 
@@ -305,5 +355,14 @@ class MaskedDynamicAvoider(DynamicAvoider):
         result.num_segments = current_time_index - 1
         if result.path and list(it.chain(*result.path))[-1] != end:
             result.path.append([end])
+
+        # Validate path against initial obstacles in predictive mode
+        if prediction_mode == "predictive" and result.path:
+            flat_path = [pt for segment in result.path for pt in segment]
+            result.is_pred_path_valid = self._validate_path_against_initial_obstacles(
+                path=flat_path,
+                time_keys=time_keys,
+                dict_obstacles=dict_obstacles,
+            )
 
         return result
