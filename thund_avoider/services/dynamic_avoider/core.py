@@ -39,6 +39,16 @@ class DynamicAvoider:
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
 
+    @property
+    def tuning_strategy(self) -> str:
+        """Get the fine-tuning strategy."""
+        return self._fine_tuner._config.tuning_strategy
+
+    @tuning_strategy.setter
+    def tuning_strategy(self, value: str) -> None:
+        """Set the fine-tuning strategy."""
+        self._fine_tuner._config.tuning_strategy = value
+
     @staticmethod
     def extract_time_keys(dir_path) -> list[str]:
         """Extract sorted time keys from CSV filenames in a directory."""

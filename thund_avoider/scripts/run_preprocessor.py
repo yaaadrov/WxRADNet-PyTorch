@@ -162,7 +162,7 @@ def process_dates(
         )
 
 
-if __name__ == "__main__":
+def main():
     preprocessor = Preprocessor(settings.preprocessor_config)
     with open(TIMESTAMPS_PATH, "rb") as file_in:
         timestamps_to_process = pickle.load(file_in)
@@ -175,3 +175,7 @@ if __name__ == "__main__":
         data_path=DATA_PATH,
         images_path=IMAGES_PATH,
     )
+
+
+if __name__ == "__main__":
+    main()
