@@ -11,7 +11,9 @@ class DirectionVector(BaseModel):
 
 class SlidingWindowPathMasked(SlidingWindowPath):
     available_obstacles_dicts: list[dict[str, dict[str, list[Polygon]]]] = []
+    is_pred_path_valid: bool = True
 
 
 class FineTunedPathMasked(FineTunedPath):
     available_obstacles_dicts: list[dict[str, dict[str, list[Polygon]]]] = []
+    is_pred_path_valid: bool = True
