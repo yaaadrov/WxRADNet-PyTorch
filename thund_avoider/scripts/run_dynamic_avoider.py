@@ -113,7 +113,7 @@ def process_timestamp(
     )
     dynamic_avoider.logger.info(f"\nMASTER GRAPH FOR {timestamp} READY\n")
 
-    result = TimestampResult(timestamp=timestamp)
+    result = TimestampResult(timestamp=file_name)
     tuning_label = f"{tuning_type.upper()} FINE-TUNING" if with_fine_tuning else "PATHFINDING"
 
     for window_size in WINDOW_SIZES:
