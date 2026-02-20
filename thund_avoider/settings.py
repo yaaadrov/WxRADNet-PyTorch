@@ -142,8 +142,6 @@ class PredictorConfig(BaseModel):
     input_frames: int = 6
     output_frames: int = 6
     delta_minutes: int = 5
-    # intensity_threshold: int = 100
-    # max_intensity_threshold: int = 255
 
     @property
     def device(self) -> device:

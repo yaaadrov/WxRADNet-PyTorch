@@ -66,7 +66,7 @@ A comprehensive framework for **aircraft thunderstorm avoidance** using deep lea
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/WxRADNet-PyTorch.git
+git clone https://github.com/yaaadrov/WxRADNet-PyTorch.git
 cd WxRADNet-PyTorch
 
 # Install dependencies
