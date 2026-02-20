@@ -132,7 +132,7 @@ def process_timestamp_masked(
     time_keys, dict_obstacles = collect_obstacles_for_timestamp(DATA_PATH / file_name)
     masked_avoider.logger.info(f"\nOBSTACLES FOR {timestamp} READY\n")
 
-    result = MaskedTimestampResult(timestamp=timestamp, prediction_mode=prediction_mode)
+    result = MaskedTimestampResult(timestamp=file_name, prediction_mode=prediction_mode)
 
     for window_size in WINDOW_SIZES:
         masked_avoider.logger.info(f"START {mode_label} PATHFINDING FOR {timestamp}\n")
@@ -225,7 +225,7 @@ def process_data_masked(
             with_backward_pathfinding=with_backward_pathfinding,
         )
 
-        df = gpd.GeoDataFrame(timestamp_result.to_records(), crs="EPSG:3067")
+        df = gpd.GeoDataFrame(timestamp_result.to_records(), geometry="path", crs="EPSG:3067")
         df.to_parquet(result_dir / f"{file_name}.parquet", index=False)
         masked_avoider.logger.info(
             f"{i + 1:<{total_width}}/{len(timestamps)}: {timestamp} saved to "
@@ -258,6 +258,7 @@ def main() -> None:
         ab_points=ab_points,
         prediction_mode="deterministic",
         with_fine_tuning=False,
+        with_backward_pathfinding=True,
     )
 
     # Experiment 2: Deterministic with greedy fine-tuning
@@ -271,6 +272,7 @@ def main() -> None:
         ab_points=ab_points,
         prediction_mode="deterministic",
         with_fine_tuning=True,
+        with_backward_pathfinding=True,
     )
 
     # Experiment 3: Predictive base (no fine-tuning)
@@ -283,6 +285,7 @@ def main() -> None:
         ab_points=ab_points,
         prediction_mode="predictive",
         with_fine_tuning=False,
+        with_backward_pathfinding=True,
     )
 
     # Experiment 4: Predictive with greedy fine-tuning
@@ -296,6 +299,7 @@ def main() -> None:
         ab_points=ab_points,
         prediction_mode="predictive",
         with_fine_tuning=True,
+        with_backward_pathfinding=True,
     )
 
 
