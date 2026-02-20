@@ -27,7 +27,7 @@ class MaskedPathfindingResult(BaseModel):
     """Single pathfinding result for one window size with masked obstacles."""
 
     strategy: str
-    timestamp: datetime
+    timestamp: str
     window_size: int
     direction: str
     prediction_mode: str
@@ -58,7 +58,7 @@ class MaskedPathfindingResult(BaseModel):
 class MaskedTimestampResult(BaseModel):
     """Collection of masked pathfinding results for a single timestamp."""
 
-    timestamp: datetime
+    timestamp: str
     prediction_mode: str
     results: list[MaskedPathfindingResult] = []
 

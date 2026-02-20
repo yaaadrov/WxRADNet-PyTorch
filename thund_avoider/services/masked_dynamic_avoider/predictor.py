@@ -1,3 +1,4 @@
+import logging
 import math
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -35,6 +36,9 @@ class ThunderstormPredictor:
         self._config = config
         self._preprocessor = preprocessor
         self._model = self._load_model()
+
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger(__name__)
 
     # ==========================================================================
     # Model Loading and Initialization
@@ -156,13 +160,18 @@ class ThunderstormPredictor:
 
         return previous_keys
 
-    def _get_future_time_keys(self, current_time_key: str,) -> list[str]:
+    def _get_future_time_keys(
+        self,
+        current_time_key: str,
+        output_frames: int | None = None,
+    ) -> list[str]:
         """Get time keys for future predictions with delta_minutes interval."""
         current_dt = self._parse_time_key(current_time_key)
         delta = timedelta(minutes=self._config.delta_minutes)
+        num_frames = output_frames or self._config.output_frames
 
         future_keys = []
-        for i in range(1, self._config.output_frames + 1):
+        for i in range(1, num_frames + 1):
             future_dt = current_dt + (delta * i)
             future_keys.append(self._format_time_key(future_dt))
 
@@ -317,18 +326,24 @@ class ThunderstormPredictor:
         tensor = torch.from_numpy(transposed.astype(np.float32))
         return tensor.unsqueeze(0).to(self._config.device)
 
-    def _run_inference(self, input_tensor: torch.Tensor) -> np.ndarray:
+    def _run_inference(
+        self,
+        input_tensor: torch.Tensor,
+        output_frames: int | None = None,
+    ) -> np.ndarray:
         """
         Run model inference and return predictions.
 
         Args:
             input_tensor (torch.Tensor): Input tensor.
+            output_frames (int | None): Number of frames to predict. Uses config default if None.
 
         Returns:
             np.ndarray: Predicted frames as numpy array.
         """
+        num_frames = output_frames or self._config.output_frames
         with torch.no_grad():
-            predictions = self._model(input_tensor, self._config.output_frames)
+            predictions = self._model(input_tensor, num_frames)
         return predictions.squeeze(0).cpu().numpy()
 
     @staticmethod
@@ -360,6 +375,7 @@ class ThunderstormPredictor:
         direction_vector: DirectionVector,
         strategy: Literal["concave", "convex"] = "concave",
         by_url: bool = False,
+        output_frames: int | None = None,
     ) -> PredictionResult:
         """
         Generate thunderstorm predictions for future time steps.
@@ -371,16 +387,20 @@ class ThunderstormPredictor:
             direction_vector (DirectionVector): Direction vector for cropping.
             strategy (Literal["concave", "convex"]): Hull strategy for polygons.
             by_url (bool): Whether to fetch images by URL instead of local path.
+            output_frames (int | None): Number of frames to predict. Uses config default if None.
 
         Returns:
             PredictionResult: Container with predicted obstacles for each time key.
         """
+        self.logger.info(
+            f"Predicting {output_frames or self._config.output_frames} output frames"
+        )
         current_time_key = time_keys[current_time_index]
         base_time_key = time_keys[0]
 
         # Get time keys
         previous_keys = self._get_previous_time_keys(current_time_key)
-        future_keys = self._get_future_time_keys(current_time_key)
+        future_keys = self._get_future_time_keys(current_time_key, output_frames)
 
         # Load images for both strategies
         left_images, left_transform, left_crs = self._load_images_for_strategy(
@@ -401,8 +421,14 @@ class ThunderstormPredictor:
         )
 
         # Run inference
-        left_predictions = self._run_inference(self._prepare_input_tensor(left_images))
-        right_predictions = self._run_inference(self._prepare_input_tensor(right_images))
+        left_predictions = self._run_inference(
+            input_tensor=self._prepare_input_tensor(left_images),
+            output_frames=output_frames,
+        )
+        right_predictions = self._run_inference(
+            input_tensor=self._prepare_input_tensor(right_images),
+            output_frames=output_frames,
+        )
         combined_predictions = self._combine_left_right_predictions(left_predictions, right_predictions)
 
         # Build wide transform using preprocessor

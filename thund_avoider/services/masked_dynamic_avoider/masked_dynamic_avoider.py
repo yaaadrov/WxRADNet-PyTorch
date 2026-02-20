@@ -134,7 +134,7 @@ class MaskedDynamicAvoider(DynamicAvoider):
             current_pos: Current aircraft position.
             time_keys: All available time keys.
             current_time_index: Index of current timestamp.
-            num_preds: Number of predictions to use.
+            num_preds: Number of predictions to use (including current timekey).
             dict_obstacles: Original obstacles dictionary.
             current_direction_vector: Direction vector for predictions.
             clipping_bbox: Bounding box for clipping obstacles.
@@ -165,6 +165,7 @@ class MaskedDynamicAvoider(DynamicAvoider):
                     current_position=current_pos,
                     direction_vector=current_direction_vector,
                     strategy=self.strategy,
+                    output_frames=num_preds - 1,
                 )
                 available_time_keys = [current_time_key] + prediction_result.time_keys
                 available_obstacles_dict: dict[str, dict[str, list[Polygon]]] = {
@@ -314,6 +315,9 @@ class MaskedDynamicAvoider(DynamicAvoider):
                     f"Predicted path validation failed at time_key={time_key}, segment={i}"
                 )
                 return False
+            self.logger.info(
+                "Predicted path validation succeeded"
+            )
         return True
 
     # ==========================================================================

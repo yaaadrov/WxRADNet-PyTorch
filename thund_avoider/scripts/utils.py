@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from logging import Logger
 from pathlib import Path
@@ -13,7 +14,7 @@ WINDOW_SIZES: Final = [1, 2, 3, 4, 5, 6, 7]
 
 def format_timestamp(ts: datetime) -> str:
     """Format datetime as filename-safe string."""
-    return "_".join(str(ts).split())
+    return "_".join(re.split(r"[- :]", str(ts)))
 
 
 def save_combined_results(
@@ -35,7 +36,7 @@ def save_combined_results(
         return
 
     dfs = [gpd.read_parquet(f) for f in parquet_files]
-    combined = gpd.GeoDataFrame(pd.concat(dfs, ignore_index=True), crs="EPSG:3067")
+    combined = gpd.GeoDataFrame(pd.concat(dfs, ignore_index=True), geometry="path")
     output_path = RESULT_PATH / f"{result_name}.parquet"
     combined.to_parquet(output_path, index=False)
     logger.info(f"Final DataFrame saved successfully to '{output_path}'")

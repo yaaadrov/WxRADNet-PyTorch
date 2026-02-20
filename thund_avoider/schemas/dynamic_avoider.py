@@ -43,7 +43,7 @@ class PathfindingResult(BaseModel):
     """Single pathfinding result for one window size."""
 
     strategy: str
-    timestamp: datetime
+    timestamp: str
     window_size: int
     direction: str
     path: LineString
@@ -70,7 +70,7 @@ class PathfindingResult(BaseModel):
 class TimestampResult(BaseModel):
     """Collection of pathfinding results for a single timestamp."""
 
-    timestamp: datetime
+    timestamp: str
     results: list[PathfindingResult] = []
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
