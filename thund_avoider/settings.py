@@ -152,6 +152,27 @@ class PredictorConfig(BaseModel):
 
 
 # =============================================================================
+# Interpretation Configuration
+# =============================================================================
+
+class InterpretationConfig(BaseModel):
+    """Configuration for statistical interpretation and reporting."""
+
+    reports_path: Path = RESULT_PATH / "reports"
+    default_palette: list[str] = [
+        "#89A1AE",
+        "#FF5B17",
+        "#4042EE",
+        "#00DA72",
+        "#FF92B7",
+    ]
+    default_confidence_level: float = 0.95
+    default_alpha: float = 0.05
+    figure_dpi: int = 150
+    figure_size: tuple[int, int] = (12, 8)
+
+
+# =============================================================================
 # Settings
 # =============================================================================
 
@@ -162,6 +183,7 @@ class Settings(BaseModel):
     static_avoider_config: StaticAvoiderConfig = StaticAvoiderConfig()
     dynamic_avoider_config: DynamicAvoiderConfig = DynamicAvoiderConfig()
     predictor_config: PredictorConfig = PredictorConfig()
+    interpretation_config: InterpretationConfig = InterpretationConfig()
 
 
 settings = Settings()
