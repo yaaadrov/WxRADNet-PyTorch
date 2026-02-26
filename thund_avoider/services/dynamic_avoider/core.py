@@ -11,6 +11,7 @@ from shapely.ops import substring
 from thund_avoider.schemas.dynamic_avoider import SlidingWindowPath, FineTunedPath
 from thund_avoider.services.dynamic_avoider.data_loader import DataLoader
 from thund_avoider.services.dynamic_avoider.fine_tuner import FineTuner
+from thund_avoider.services.dynamic_avoider.segment_corrector import SegmentCorrector
 from thund_avoider.services.utils import subgraph_for_time_keys
 from thund_avoider.services.dynamic_avoider.graph_builder import GraphBuilder
 from thund_avoider.settings import DynamicAvoiderConfig
@@ -29,6 +30,9 @@ class DynamicAvoider:
         self._graph_builder = GraphBuilder(config.graph_builder_config)
         self._fine_tuner = FineTuner(config.fine_tuner_config)
         self._data_loader = DataLoader(config.data_loader_config)
+        self._segment_corrector = SegmentCorrector(
+            strategy=config.graph_builder_config.strategy,
+        )
 
         # Store commonly used values for convenience
         self.strategy = config.graph_builder_config.strategy
@@ -164,6 +168,46 @@ class DynamicAvoider:
         """Densify the path by interpolating points to ensure no segment exceeds max_distance."""
         return self._fine_tuner.densify_path(path)
 
+    def _validate_and_correct_segment(
+        self,
+        segment: list[Point],
+        time_keys: list[str],
+        current_time_index: int,
+        dict_obstacles: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]],
+        full_path: list[Point],
+        target_length: float,
+    ) -> tuple[list[Point], bool]:
+        """
+        Validate that segment endpoint is not inside obstacle for next time key.
+        If it is, correct the segment and ensure it maintains target length.
+
+        Args:
+            segment: Path segment for current time step.
+            time_keys: All available time keys.
+            current_time_index: Current time index.
+            dict_obstacles: Ground truth obstacles (not predictions).
+            full_path: The complete path found so far.
+            target_length: Target length for the segment.
+
+        Returns:
+            Validated/corrected path segment with proper length.
+        """
+        corrected, success = self._segment_corrector.validate_and_correct_segment(
+            segment=segment,
+            time_keys=time_keys,
+            current_time_index=current_time_index,
+            dict_obstacles=dict_obstacles,
+            full_path=full_path,
+        )
+
+        # Ensure corrected segment maintains proper length
+        if corrected and LineString(corrected).length > target_length:
+            path_line = LineString(corrected)
+            path_within = substring(path_line, 0, target_length)
+            corrected = [Point(coord) for coord in path_within.coords]
+
+        return corrected, success
+
     def _pathfinding_iter(
         self,
         current_pos: Point,
@@ -177,6 +221,8 @@ class DynamicAvoider:
         G_master: nx.Graph,
         master_vertices: list[Point],
         time_valid_edges: dict[str, list[tuple[int, int, float]]],
+        dict_obstacles: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]] | None = None,
+        validate_segment_endpoint: bool = False,
     ) -> tuple[Point, int, bool]:
         """
         Perform one step of the sliding window pathfinding.
@@ -194,6 +240,8 @@ class DynamicAvoider:
             G_master (nx.Graph): Master graph with all possible vertices.
             master_vertices (list[Point]): List of master graph's vertices.
             time_valid_edges: List of valid edges for each time key.
+            dict_obstacles: Ground truth obstacles for validation (not predictions).
+            validate_segment_endpoint: Whether to validate and correct segment endpoints.
 
         Returns:
             tuple: Updated position, time index, and whether to continue.
@@ -271,6 +319,21 @@ class DynamicAvoider:
         # Update current position
         path_within_window = substring(LineString(path_tuned), 0, self.velocity_mpm * self.delta_minutes)
         points_within_window = [Point(coord) for coord in path_within_window.coords]
+
+        # Validate and correct segment endpoint if requested
+        if validate_segment_endpoint and dict_obstacles is not None:
+            full_path = path_tuned
+            target_length = self.velocity_mpm * self.delta_minutes
+            points_within_window, success_endpoint = self._validate_and_correct_segment(
+                segment=points_within_window,
+                time_keys=time_keys,
+                current_time_index=current_time_index,
+                dict_obstacles=dict_obstacles,
+                full_path=full_path,
+                target_length=target_length,
+            )
+            sliding_window_result.success_intermediate &= success_endpoint
+
         new_pos = points_within_window[-1]
         new_time_index = current_time_index + 1
 
@@ -297,6 +360,8 @@ class DynamicAvoider:
         master_vertices: list[Point],
         time_valid_edges: dict[str, list[tuple[int, int, float]]],
         strtrees: dict[str, STRtree],
+        dict_obstacles: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]] | None = None,
+        validate_segment_endpoint: bool = False,
     ) -> tuple[Point, int, bool]:
         """
         Perform one step of the pathfinding with fine-tuning.
@@ -315,6 +380,8 @@ class DynamicAvoider:
             master_vertices (list[Point]): List of master graph's vertices.
             time_valid_edges: List of valid edges for each time key.
             strtrees (dict[str, STRtree]): STRTrees for each time key.
+            dict_obstacles: Ground truth obstacles for validation (not predictions).
+            validate_segment_endpoint: Whether to validate and correct segment endpoints.
 
         Returns:
             tuple: Updated position, time index, and whether to continue.
@@ -355,6 +422,20 @@ class DynamicAvoider:
         # Update current position
         path_within_window = substring(LineString(path_fine_tuned), 0, self.velocity_mpm * self.delta_minutes)
         points_within_window = [Point(coord) for coord in path_within_window.coords]
+
+        # Validate and correct segment endpoint if requested
+        if validate_segment_endpoint and dict_obstacles is not None:
+            target_length = self.velocity_mpm * self.delta_minutes
+            points_within_window, success_endpoint = self._validate_and_correct_segment(
+                segment=points_within_window,
+                time_keys=time_keys,
+                current_time_index=current_time_index,
+                dict_obstacles=dict_obstacles,
+                full_path=path_fine_tuned,
+                target_length=target_length,
+            )
+            fine_tuning_result.success_intermediate &= success_endpoint
+
         new_pos = points_within_window[-1]
         new_time_index = current_time_index + 1
 

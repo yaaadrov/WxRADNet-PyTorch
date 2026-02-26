@@ -315,9 +315,6 @@ class MaskedDynamicAvoider(DynamicAvoider):
                     f"Predicted path validation failed at time_key={time_key}, segment={i}"
                 )
                 return False
-            self.logger.info(
-                "Predicted path validation succeeded"
-            )
         return True
 
     # ==========================================================================
@@ -333,6 +330,7 @@ class MaskedDynamicAvoider(DynamicAvoider):
         window_size: int,
         time_keys: list[str],
         dict_obstacles: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]],
+        validate_segment_endpoint: bool = False,
         masking_strategy: Literal["center", "left", "right", "wide"] = "wide",
         prediction_mode: Literal["deterministic", "predictive"] = "deterministic",
     ) -> SlidingWindowPathMasked:
@@ -346,6 +344,7 @@ class MaskedDynamicAvoider(DynamicAvoider):
             window_size: Size of pathfinding window.
             time_keys: All available time keys sorted chronologically.
             dict_obstacles: Dictionary of obstacles GeoDataFrames.
+            validate_segment_endpoint: Whether to validate and correct segment endpoints.
             masking_strategy: Strategy for spatial masking.
             prediction_mode: "deterministic" uses actual data, "predictive" uses ML predictions.
 
@@ -388,6 +387,8 @@ class MaskedDynamicAvoider(DynamicAvoider):
                 G_master=G_master_local,
                 master_vertices=master_vertices_local,
                 time_valid_edges=time_valid_edges_local,
+                dict_obstacles=dict_obstacles,
+                validate_segment_endpoint=validate_segment_endpoint,
             )
             if not should_continue:
                 break
@@ -406,6 +407,8 @@ class MaskedDynamicAvoider(DynamicAvoider):
                 time_keys=time_keys,
                 dict_obstacles=dict_obstacles,
             )
+            if result.is_pred_path_valid:
+                self.logger.info("Predicted path validation succeeded")
 
         return result
 
@@ -419,6 +422,7 @@ class MaskedDynamicAvoider(DynamicAvoider):
         num_preds: int,
         time_keys: list[str],
         dict_obstacles: dict[str, gpd.GeoDataFrame] | dict[str, dict[str, list[Polygon]]],
+        validate_segment_endpoint: bool = False,
         masking_strategy: Literal["center", "left", "right", "wide"] = "wide",
         prediction_mode: Literal["deterministic", "predictive"] = "deterministic",
     ) -> FineTunedPathMasked:
@@ -433,6 +437,7 @@ class MaskedDynamicAvoider(DynamicAvoider):
             num_preds: Number of prediction time steps available.
             time_keys: All available time keys sorted chronologically.
             dict_obstacles: Dictionary of obstacles GeoDataFrames.
+            validate_segment_endpoint: Whether to validate and correct segment endpoints.
             masking_strategy: Strategy for spatial masking.
             prediction_mode: "deterministic" uses actual data, "predictive" uses ML predictions.
 
@@ -482,6 +487,8 @@ class MaskedDynamicAvoider(DynamicAvoider):
                 master_vertices=master_vertices_local,
                 time_valid_edges=time_valid_edges_local,
                 strtrees=strtrees_local,
+                dict_obstacles=dict_obstacles,
+                validate_segment_endpoint=validate_segment_endpoint,
             )
             if not should_continue:
                 break
@@ -500,5 +507,7 @@ class MaskedDynamicAvoider(DynamicAvoider):
                 time_keys=time_keys,
                 dict_obstacles=dict_obstacles,
             )
+            if result.is_pred_path_valid:
+                self.logger.info("Predicted path validation succeeded")
 
         return result

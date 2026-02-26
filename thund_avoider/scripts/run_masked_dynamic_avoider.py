@@ -81,6 +81,7 @@ def run_pathfinding_masked(
             dict_obstacles=dict_obstacles,
             masking_strategy=MASKING_STRATEGY,
             prediction_mode=prediction_mode,
+            validate_segment_endpoint=prediction_mode == "predictive",
         )
     else:
         result = masked_avoider.perform_pathfinding_masked(
@@ -92,6 +93,7 @@ def run_pathfinding_masked(
             dict_obstacles=dict_obstacles,
             masking_strategy=MASKING_STRATEGY,
             prediction_mode=prediction_mode,
+            validate_segment_endpoint=prediction_mode == "predictive",
         )
 
     masked_avoider.logger.info(
