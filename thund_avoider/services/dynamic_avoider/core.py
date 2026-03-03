@@ -192,7 +192,7 @@ class DynamicAvoider:
         Returns:
             Validated/corrected path segment with proper length.
         """
-        corrected, success = self._segment_corrector.validate_and_correct_segment(
+        result = self._segment_corrector.validate_and_correct_segment(
             segment=segment,
             time_keys=time_keys,
             current_time_index=current_time_index,
@@ -200,9 +200,26 @@ class DynamicAvoider:
             full_path=full_path,
         )
 
-        # Ensure corrected segment maintains proper length
-        if corrected and LineString(corrected).length > target_length:
+        # Handle None return from segment corrector
+        if result is None:
+            self.logger.warning("Segment corrector returned None, using original segment")
+            return segment, False
+
+        corrected, success = result
+
+        # Handle empty corrected segment
+        if not corrected:
+            self.logger.warning("Corrected segment is empty, using original segment")
+            return segment, success
+
+        try:
             path_line = LineString(corrected)
+        except Exception as e:
+            self.logger.info(f"Unable to validate and correct segment due to '{e}'")
+            return segment, success
+
+        # Ensure corrected segment maintains proper length
+        if path_line.length > target_length:
             path_within = substring(path_line, 0, target_length)
             corrected = [Point(coord) for coord in path_within.coords]
 

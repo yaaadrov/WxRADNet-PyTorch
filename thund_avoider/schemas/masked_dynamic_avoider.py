@@ -8,6 +8,10 @@ from shapely.geometry import LineString
 from thund_avoider.schemas.dynamic_avoider import SlidingWindowPath, FineTunedPath
 
 
+class MaskedPathfindingError(Exception):
+    """Raised when pathfinding cannot proceed due to geometry issues."""
+
+
 class DirectionVector(BaseModel):
     dx: float
     dy: float

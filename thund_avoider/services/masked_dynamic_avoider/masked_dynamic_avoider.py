@@ -6,6 +6,7 @@ import geopandas as gpd
 import networkx as nx
 import numpy as np
 from shapely import Point, Polygon, STRtree
+from shapely.errors import GEOSException
 from shapely.ops import unary_union
 
 from thund_avoider.schemas.dynamic_avoider import SlidingWindowPath, FineTunedPath
@@ -13,6 +14,7 @@ from thund_avoider.schemas.masked_dynamic_avoider import (
     DirectionVector,
     SlidingWindowPathMasked,
     FineTunedPathMasked,
+    MaskedPathfindingError,
 )
 from thund_avoider.services.dynamic_avoider import DynamicAvoider
 from thund_avoider.services.dynamic_avoider.fine_tuner import FineTuner
@@ -101,18 +103,13 @@ class MaskedDynamicAvoider(DynamicAvoider):
             current_result.available_obstacles_dicts[-1][time_keys[current_time_index - 1]][self.strategy]
             if current_result.available_obstacles_dicts else []
         )
-        # obstacle_to_add = Polygon()
-        # if previous_obstacles:
-        #     remaining_prev = unary_union(previous_obstacles).difference(clipping_bbox)
-        #     if isinstance(remaining_prev, Polygon):
-        #         obstacle_to_add = remaining_prev
-        #     if isinstance(remaining_prev, MultiPolygon):
-        #         polys = [geom for geom in remaining_prev.geoms if isinstance(geom, Polygon)]
-        #         obstacle_to_add = max(polys, key=lambda p: p.area) if polys else Polygon()
         if previous_obstacles:
-            remaining_prev = unary_union(previous_obstacles).difference(clipping_bbox)
-            extracted_list = [remaining_prev] if isinstance(remaining_prev, Polygon) else list(remaining_prev.geoms)
-            available_obstacles_dict[time_keys[current_time_index]][self.strategy].extend(extracted_list)
+            try:
+                remaining_prev = unary_union(previous_obstacles).difference(clipping_bbox)
+                extracted_list = [remaining_prev] if isinstance(remaining_prev, Polygon) else list(remaining_prev.geoms)
+                available_obstacles_dict[time_keys[current_time_index]][self.strategy].extend(extracted_list)
+            except GEOSException:
+                pass
         current_result.available_obstacles_dicts.append(available_obstacles_dict)
         return available_obstacles_dict
 
@@ -142,41 +139,49 @@ class MaskedDynamicAvoider(DynamicAvoider):
 
         Returns:
             Tuple of (available_time_keys, available_obstacles_dict).
+
+        Raises:
+            MaskedPathfindingError: If geometry operations fail during obstacle preparation.
         """
-        match prediction_mode:
-            case "deterministic":
-                available_time_keys = time_keys[
-                    current_time_index : current_time_index + num_preds
-                ]
-                available_obstacles_dict: dict[str, dict[str, list[Polygon]]] = {
-                    time_key: {
-                        self.strategy: self.preprocessor.clip_polygons(
-                            dict_obstacles[time_key][self.strategy].tolist(),
-                            bbox=clipping_bbox,
-                        )
+        try:
+            match prediction_mode:
+                case "deterministic":
+                    available_time_keys = time_keys[
+                        current_time_index : current_time_index + num_preds
+                    ]
+                    available_obstacles_dict: dict[str, dict[str, list[Polygon]]] = {
+                        time_key: {
+                            self.strategy: self.preprocessor.clip_polygons(
+                                dict_obstacles[time_key][self.strategy].tolist(),
+                                bbox=clipping_bbox,
+                            )
+                        }
+                        for time_key in available_time_keys
                     }
-                    for time_key in available_time_keys
-                }
-            case "predictive":
-                current_time_key = time_keys[current_time_index]
-                prediction_result = self.predictor.predict(
-                    time_keys=time_keys,
-                    current_time_index=current_time_index,
-                    current_position=current_pos,
-                    direction_vector=current_direction_vector,
-                    strategy=self.strategy,
-                    output_frames=num_preds - 1,
-                )
-                available_time_keys = [current_time_key] + prediction_result.time_keys
-                available_obstacles_dict: dict[str, dict[str, list[Polygon]]] = {
-                    current_time_key: {
-                        self.strategy: self.preprocessor.clip_polygons(
-                            dict_obstacles[current_time_key][self.strategy].tolist(),
-                            bbox=clipping_bbox,
-                        )
+                case "predictive":
+                    current_time_key = time_keys[current_time_index]
+                    prediction_result = self.predictor.predict(
+                        time_keys=time_keys,
+                        current_time_index=current_time_index,
+                        current_position=current_pos,
+                        direction_vector=current_direction_vector,
+                        strategy=self.strategy,
+                        output_frames=num_preds - 1,
+                    )
+                    available_time_keys = [current_time_key] + prediction_result.time_keys
+                    available_obstacles_dict: dict[str, dict[str, list[Polygon]]] = {
+                        current_time_key: {
+                            self.strategy: self.preprocessor.clip_polygons(
+                                dict_obstacles[current_time_key][self.strategy].tolist(),
+                                bbox=clipping_bbox,
+                            )
+                        }
                     }
-                }
-                available_obstacles_dict.update(prediction_result.obstacles_dict)
+                    available_obstacles_dict.update(prediction_result.obstacles_dict)
+        except GEOSException as e:
+            raise MaskedPathfindingError(
+                f"Geometry error at time_index={current_time_index}, window={num_preds}: {e}"
+            ) from e
         return available_time_keys, available_obstacles_dict
 
     def _prepare_obstacles(

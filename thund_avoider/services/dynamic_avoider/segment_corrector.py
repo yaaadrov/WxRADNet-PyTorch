@@ -350,4 +350,11 @@ class SegmentCorrector:
             current_time_index=current_time_index,
         )
 
-        return (corrected, False) if corrected is not None else (segment, True)
+        # Ensure we always return a valid tuple
+        if corrected is None:
+            self.logger.warning(
+                f"Path correction failed at time_index={current_time_index}, returning original segment"
+            )
+            return segment, True
+
+        return corrected, False
