@@ -6,7 +6,7 @@ from typing import Final, Literal
 import geopandas as gpd
 from shapely import Point
 
-from thund_avoider.schemas.masked_dynamic_avoider import MaskedTimestampResult
+from thund_avoider.schemas.masked_dynamic_avoider import MaskedTimestampResult, MaskedPathfindingError
 from thund_avoider.services.masked_dynamic_avoider import MaskedDynamicAvoider
 from thund_avoider.services.dynamic_avoider.data_loader import DataLoader
 from thund_avoider.settings import (
@@ -111,7 +111,7 @@ def process_timestamp_masked(
     prediction_mode: Literal["deterministic", "predictive"],
     with_fine_tuning: bool,
     with_backward_pathfinding: bool,
-) -> MaskedTimestampResult:
+) -> MaskedTimestampResult | None:
     """
     Process a single timestamp with pathfinding for all window sizes.
 
@@ -125,7 +125,7 @@ def process_timestamp_masked(
         with_backward_pathfinding: Whether to also compute B -> A paths.
 
     Returns:
-        MaskedTimestampResult with all pathfinding results.
+        MaskedTimestampResult with all pathfinding results, or None if skipped due to geometry errors.
     """
     file_name = format_timestamp(timestamp)
     mode_label = f"{prediction_mode.upper()} {'GREEDY' if with_fine_tuning else 'BASE'}"
@@ -140,32 +140,39 @@ def process_timestamp_masked(
         masked_avoider.logger.info(f"START {mode_label} PATHFINDING FOR {timestamp}\n")
         masked_avoider.logger.info(f"====== Window size {window_size} ======")
 
-        result_a = run_pathfinding_masked(
-            masked_avoider=masked_avoider,
-            start=a_point,
-            end=b_point,
-            window_size=window_size,
-            time_keys=time_keys,
-            dict_obstacles=dict_obstacles,
-            prediction_mode=prediction_mode,
-            with_fine_tuning=with_fine_tuning,
-            direction="(A)  ->  (B)",
-        )
-        result.add_result(result_a, window_size, "A->B")
-
-        if with_backward_pathfinding:
-            result_b = run_pathfinding_masked(
+        try:
+            result_a = run_pathfinding_masked(
                 masked_avoider=masked_avoider,
-                start=b_point,
-                end=a_point,
+                start=a_point,
+                end=b_point,
                 window_size=window_size,
                 time_keys=time_keys,
                 dict_obstacles=dict_obstacles,
                 prediction_mode=prediction_mode,
                 with_fine_tuning=with_fine_tuning,
-                direction="(B)  ->  (A)",
+                direction="(A)  ->  (B)",
             )
-            result.add_result(result_b, window_size, "B->A")
+            result.add_result(result_a, window_size, "A->B")
+
+            if with_backward_pathfinding:
+                result_b = run_pathfinding_masked(
+                    masked_avoider=masked_avoider,
+                    start=b_point,
+                    end=a_point,
+                    window_size=window_size,
+                    time_keys=time_keys,
+                    dict_obstacles=dict_obstacles,
+                    prediction_mode=prediction_mode,
+                    with_fine_tuning=with_fine_tuning,
+                    direction="(B)  ->  (A)",
+                )
+                result.add_result(result_b, window_size, "B->A")
+
+        except MaskedPathfindingError as e:
+            masked_avoider.logger.warning(
+                f"Skipping {timestamp} due to geometry error: {e}\n"
+            )
+            return None
 
     return result
 
@@ -226,6 +233,9 @@ def process_data_masked(
             with_fine_tuning=with_fine_tuning,
             with_backward_pathfinding=with_backward_pathfinding,
         )
+
+        if timestamp_result is None:
+            continue
 
         df = gpd.GeoDataFrame(timestamp_result.to_records(), geometry="path", crs="EPSG:3067")
         df.to_parquet(result_dir / f"{file_name}.parquet", index=False)

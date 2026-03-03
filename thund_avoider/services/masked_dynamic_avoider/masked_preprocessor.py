@@ -6,7 +6,8 @@ import numpy as np
 import rasterio
 from affine import Affine
 from rasterio.warp import reproject, Resampling
-from shapely import Point, Polygon, STRtree, MultiPolygon, MultiPoint
+from shapely import Point, Polygon, STRtree, MultiPolygon, MultiPoint, make_valid
+from shapely.errors import GEOSException
 from shapely.ops import unary_union
 from shapely.affinity import rotate, translate
 
@@ -246,13 +247,30 @@ class MaskedPreprocessor(Preprocessor):
         geometry: list[Polygon],
         bbox: Polygon,
     ) -> list[Polygon]:
-        """Clip polygons to bounding box, returning only the intersecting portions."""
+        """
+        Clip polygons to bounding box, returning only the intersecting portions.
+
+        Invalid polygons are automatically repaired using make_valid() before clipping.
+        If clipping still fails, the problematic polygon is skipped.
+        """
         tree = STRtree(geometry)
         indices = tree.query(bbox, predicate="intersects")
         cropped_result = []
         for idx in indices:
             poly = geometry[idx]
-            clipped = poly.intersection(bbox)
+            if not poly.is_valid:
+                poly = make_valid(poly)
+                if poly.is_empty:
+                    continue
+                if isinstance(poly, MultiPolygon):
+                    for geom in poly.geoms:
+                        if isinstance(geom, Polygon) and not geom.is_empty:
+                            cropped_result.append(geom)
+                    continue
+            try:
+                clipped = poly.intersection(bbox)
+            except GEOSException:
+                continue
             if not clipped.is_empty:
                 if isinstance(clipped, Polygon):
                     cropped_result.append(clipped)
@@ -265,14 +283,21 @@ class MaskedPreprocessor(Preprocessor):
         geometry: list[Polygon],
         bbox: Polygon,
     ) -> Polygon:
-        """Identify bbox corners inside obstacles and create prohibited buffer zone outside bbox."""
-        merged_obstacles = unary_union(geometry)
-        coords = list(bbox.exterior.coords)[:-1]
-        corners = [Point(c) for c in coords]
-        intersected_corners = [p for p in corners if p.intersects(merged_obstacles)]
-        if not intersected_corners:
+        """
+        Identify bbox corners inside obstacles and create prohibited buffer zone outside bbox.
+
+        Returns empty Polygon if geometry operations fail.
+        """
+        try:
+            merged_obstacles = unary_union(geometry)
+            coords = list(bbox.exterior.coords)[:-1]
+            corners = [Point(c) for c in coords]
+            intersected_corners = [p for p in corners if p.intersects(merged_obstacles)]
+            if not intersected_corners:
+                return Polygon()
+            corner_collection = MultiPoint(intersected_corners)
+            prohibited_zone = corner_collection.buffer(self.bbox_buffer_m)
+            prohibited_outside = prohibited_zone.difference(bbox)
+            return prohibited_outside
+        except GEOSException:
             return Polygon()
-        corner_collection = MultiPoint(intersected_corners)
-        prohibited_zone = corner_collection.buffer(self.bbox_buffer_m)
-        prohibited_outside = prohibited_zone.difference(bbox)
-        return prohibited_outside
