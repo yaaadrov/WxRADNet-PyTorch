@@ -153,8 +153,18 @@ def process_timestamp_masked(
                 direction="(A)  ->  (B)",
             )
             result.add_result(result_a, window_size, "A->B")
+        except ValueError as e:
+            masked_avoider.logger.warning(
+                f"Skipping window_size={window_size} A->B due to error: {e}\n"
+            )
+        except MaskedPathfindingError as e:
+            masked_avoider.logger.warning(
+                f"Skipping {timestamp} due to geometry error: {e}\n"
+            )
+            return None
 
-            if with_backward_pathfinding:
+        if with_backward_pathfinding:
+            try:
                 result_b = run_pathfinding_masked(
                     masked_avoider=masked_avoider,
                     start=b_point,
@@ -167,12 +177,15 @@ def process_timestamp_masked(
                     direction="(B)  ->  (A)",
                 )
                 result.add_result(result_b, window_size, "B->A")
-
-        except MaskedPathfindingError as e:
-            masked_avoider.logger.warning(
-                f"Skipping {timestamp} due to geometry error: {e}\n"
-            )
-            return None
+            except ValueError as e:
+                masked_avoider.logger.warning(
+                    f"Skipping window_size={window_size} B->A due to error: {e}\n"
+                )
+            except MaskedPathfindingError as e:
+                masked_avoider.logger.warning(
+                    f"Skipping {timestamp} due to geometry error: {e}\n"
+                )
+                return None
 
     return result
 
