@@ -1,0 +1,35 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../data:/app/data:ro
+      - ../config:/app/config:ro
+      - ../results/human_experiments:/app/results
+      - ../thund_avoider:/app/thund_avoider:ro
+    environment:
+      - DATA_PATH=/app/data
+      - CONFIG_PATH=/app/config
+      - RESULTS_PATH=/app/results
+      - PYTHONPATH=/app
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    environment:
+      - VITE_API_BASE=http://localhost:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+
+networks:
+  default:
+    name: human-pathfinding-network

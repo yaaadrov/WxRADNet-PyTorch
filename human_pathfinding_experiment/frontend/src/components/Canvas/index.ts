@@ -1,0 +1,1 @@
+export { PathfindingCanvas } from "./PathfindingCanvas";
