@@ -5,6 +5,7 @@ from typing import Final, Literal
 
 import geopandas as gpd
 from shapely import Point
+from shapely.errors import GEOSException
 
 from thund_avoider.schemas.masked_dynamic_avoider import MaskedTimestampResult, MaskedPathfindingError
 from thund_avoider.services.masked_dynamic_avoider import MaskedDynamicAvoider
@@ -153,7 +154,7 @@ def process_timestamp_masked(
                 direction="(A)  ->  (B)",
             )
             result.add_result(result_a, window_size, "A->B")
-        except ValueError as e:
+        except (ValueError, GEOSException) as e:
             masked_avoider.logger.warning(
                 f"Skipping window_size={window_size} A->B due to error: {e}\n"
             )
@@ -177,7 +178,7 @@ def process_timestamp_masked(
                     direction="(B)  ->  (A)",
                 )
                 result.add_result(result_b, window_size, "B->A")
-            except ValueError as e:
+            except (ValueError, GEOSException) as e:
                 masked_avoider.logger.warning(
                     f"Skipping window_size={window_size} B->A due to error: {e}\n"
                 )

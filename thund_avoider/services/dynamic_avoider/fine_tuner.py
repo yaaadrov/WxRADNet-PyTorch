@@ -43,6 +43,9 @@ class FineTuner:
 
     def densify_path(self, path: list[Point]) -> list[Point]:
         """Densify the path by interpolating points to ensure no segment exceeds `max_distance`."""
+        if len(path) <= 1:
+            return path
+
         dense_path = []
         for i in range(len(path) - 1):
             segment_points = self.interpolate_points(path[i], path[i + 1])
@@ -69,6 +72,8 @@ class FineTuner:
 
     def simplify_path(self, path: list[Point]) -> list[Point]:
         """Simplify path using configured tolerance."""
+        if len(path) <= 1:
+            return path
         return linestring_to_points(
             LineString(path).simplify(
                 tolerance=self._config.simplification_tolerance,
@@ -205,6 +210,8 @@ class FineTuner:
             return False
         if current_idx + 1 >= len(path):
             return True
+        if current_idx < 1:
+            return False
         traversed_length = LineString(path[:current_idx + 1]).length
         max_length = self._velocity_mpm * self._config.delta_minutes
         return traversed_length > max_length
@@ -339,6 +346,9 @@ class FineTuner:
         Returns:
             Tuple of (should_continue, should_restart).
         """
+        if len(original_path) <= 1 or len(smoothed_path) <= 1:
+            return False, False
+
         original_length = LineString(original_path).length
         new_length = LineString(smoothed_path).length
         length_change = original_length - new_length
