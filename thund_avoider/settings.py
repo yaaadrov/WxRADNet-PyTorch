@@ -161,15 +161,23 @@ class InterpretationConfig(BaseModel):
     reports_path: Path = RESULT_PATH / "reports"
     default_palette: list[str] = [
         "#89A1AE",
+        "#B7C6CF",  # lighter #89A1AE
         "#FF5B17",
+        "#FF8A57",  # lighter #FF5B17
         "#4042EE",
+        "#7A7CF5",  # lighter #4042EE
         "#00DA72",
+        "#66E6A4",  # lighter #00DA72
         "#FF92B7",
+        "#FFC1D6",  # lighter #FF92B7
     ]
     default_confidence_level: float = 0.95
     default_alpha: float = 0.05
     figure_dpi: int = 150
-    figure_size: tuple[int, int] = (12, 8)
+    figure_size: tuple[float, float] = (12, 8)
+    boxplot_size: tuple[float, float] = (12, 8)
+    lineplot_size: tuple[float, float] = (5, 8)
+    optimal_window_size: tuple[float, float] = (8, 6)
 
 
 # =============================================================================

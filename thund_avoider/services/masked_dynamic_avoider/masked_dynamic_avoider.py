@@ -218,6 +218,7 @@ class MaskedDynamicAvoider(DynamicAvoider):
             direction_vector=current_direction_vector,
             strategy=masking_strategy,
         )
+        current_result.clipping_bboxes.append(clipping_bbox)
         available_time_keys, available_obstacles_dict = self._get_available_obstacles(
             current_pos=current_pos,
             time_keys=time_keys,
@@ -381,6 +382,7 @@ class MaskedDynamicAvoider(DynamicAvoider):
                 prohibited_zone=prohibited_boundary_zone,
                 previous_path=self._densify_path(result.all_paths[-1]) if result.all_paths else [],
             )
+            result.master_vertices.append(master_vertices_local)
             current_pos, current_time_index, should_continue = self._pathfinding_iter(
                 current_pos=current_pos,
                 end=end,

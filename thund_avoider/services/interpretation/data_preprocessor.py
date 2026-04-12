@@ -2,6 +2,7 @@ import itertools as it
 from pathlib import Path
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 from pydantic import BaseModel
 
@@ -121,6 +122,20 @@ class DataPreprocessor:
         return (df[col1] - df[col2]) / ((df[col1] + df[col2]) / 2)
 
     @staticmethod
+    def compute_zero_inflation(delta: np.ndarray) -> float:
+        """
+        Compute the zero-inflation rate of a relative-difference array.
+
+        A high zero-inflation rate (> 5–10 %) indicates a point mass at
+        zero in the distribution of δ, which violates the assumptions of
+        standard continuous tests and should inform the choice of
+        non-parametric methods in Phase 1.
+        """
+        if len(delta) == 0:
+            return 0.0
+        return float(np.sum(delta == 0) / len(delta))
+
+    @staticmethod
     def get_balanced_subset(
         dfs: dict[str, pd.DataFrame],
         on_columns: list[str] | None = None,
@@ -186,5 +201,4 @@ class DataPreprocessor:
         Returns:
             List of algorithm name pairs.
         """
-        names = self.algorithm_names
-        return list(it.combinations(names, 2))
+        return list(it.combinations(self.algorithm_names, 2))

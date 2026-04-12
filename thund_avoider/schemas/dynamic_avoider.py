@@ -1,9 +1,8 @@
-from datetime import datetime
 from typing import Any
 
 import networkx as nx
 from pydantic import BaseModel, ConfigDict
-from shapely import Point
+from shapely import Point, Polygon
 from shapely.geometry import LineString
 
 
@@ -18,6 +17,8 @@ class SlidingWindowPath(BaseModel):
     success_intermediate: bool = True
     moved_original_points_mapping: dict[Point, Point] = {}
     num_segments: int = 0
+    master_vertices: list[list[Point]] = []
+    clipping_bboxes: list[Polygon] = []
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -35,6 +36,8 @@ class FineTunedPath(BaseModel):
     success: bool = True
     success_intermediate: bool = True
     num_segments: int = 0
+    master_vertices: list[list[Point]] = []
+    clipping_bboxes: list[Polygon] = []
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

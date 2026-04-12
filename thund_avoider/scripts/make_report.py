@@ -20,54 +20,65 @@ def get_data_sources() -> list[DataSourceConfig]:
     palette = settings.interpretation_config.default_palette
 
     return [
-        # Masked deterministic
-        DataSourceConfig(
-            file_path=RESULT_PATH / "dyn_masked_deterministic_base.parquet",
-            russian_name="Маскированный (базовый)",
-            color=palette[0],
-        ),
-        DataSourceConfig(
-            file_path=RESULT_PATH / "dyn_masked_deterministic_greedy.parquet",
-            russian_name="Маскированный (жадная оптимизация)",
-            color=palette[1],
-        ),
-        # Masked predictive
-        DataSourceConfig(
-            file_path=RESULT_PATH / "dyn_masked_predictive_base.parquet",
-            russian_name="Маскированный с предсказаниями (базовый)",
-            color=palette[2],
-        ),
-        DataSourceConfig(
-            file_path=RESULT_PATH / "dyn_masked_predictive_greedy.parquet",
-            russian_name="Маскированный с предсказаниями (жадная оптимизация)",
-            color=palette[3],
-        ),
         # Non-masked
         DataSourceConfig(
-            file_path=RESULT_PATH / "dynamic_avoider_base.parquet",
-            russian_name="Базовый",
-            color=palette[4],
+            file_path=RESULT_PATH / "dynamic_avoider_master_tuned.parquet",
+            russian_name="Базовый, без маскирования, без предсказаний",
+            color=palette[0],
         ),
         DataSourceConfig(
             file_path=RESULT_PATH / "dynamic_avoider_greedy.parquet",
-            russian_name="Мастер-граф с жадной оптимизацией",
-            color=palette[0],
-        ),
-        # Master graph variants
-        DataSourceConfig(
-            file_path=RESULT_PATH / "dynamic_avoider_master.parquet",
-            russian_name="Мастер-граф",
+            russian_name="С оптимизацией, без маскирования, без предсказаний",
             color=palette[1],
         ),
+        # Masked deterministic
         DataSourceConfig(
-            file_path=RESULT_PATH / "dynamic_avoider_master_tuned.parquet",
-            russian_name="Мастер-граф с тюнингом",
+            file_path=RESULT_PATH / "dyn_masked_deterministic_base.parquet",
+            russian_name="Базовый, с маскированием, без предсказаний",
             color=palette[2],
         ),
         DataSourceConfig(
-            file_path=RESULT_PATH / "dynamic_avoider_smooth.parquet",
-            russian_name="Мастер-граф со сглаживающей оптимизацией",
+            file_path=RESULT_PATH / "dyn_masked_deterministic_greedy.parquet",
+            russian_name="С оптимизацией, с маскированием, без предсказаний",
             color=palette[3],
+        ),
+        # Masked predictive ConvGRU
+        DataSourceConfig(
+            file_path=RESULT_PATH / "dyn_masked_predictive_gru_base.parquet",
+            russian_name="Базовый, с маскированием, ConvGRU",
+            color=palette[4],
+            plot_pred_valid_rate=True,
+            draw_success_lineplot=True,
+            draw_optimal_window_plot=True,
+            lineplot_marker="^",
+        ),
+        DataSourceConfig(
+            file_path=RESULT_PATH / "dyn_masked_predictive_gru_greedy.parquet",
+            russian_name="С оптимизацией, с маскированием, ConvGRU",
+            color=palette[5],
+            plot_pred_valid_rate=True,
+            draw_success_lineplot=True,
+            draw_optimal_window_plot=False,
+            lineplot_marker="D",
+        ),
+        # Masked predictive ConvLSTM
+        DataSourceConfig(
+            file_path=RESULT_PATH / "dyn_masked_predictive_lstm_base.parquet",
+            russian_name="Базовый, с маскированием, ConvLSTM",
+            color=palette[6],
+            plot_pred_valid_rate=True,
+            draw_success_lineplot=True,
+            draw_optimal_window_plot=True,
+            lineplot_marker="o",
+        ),
+        DataSourceConfig(
+            file_path=RESULT_PATH / "dyn_masked_predictive_lstm_greedy.parquet",
+            russian_name="С оптимизацией, с маскированием, ConvLSTM",
+            color=palette[7],
+            plot_pred_valid_rate=True,
+            draw_success_lineplot=True,
+            draw_optimal_window_plot=False,
+            lineplot_marker="s",
         ),
     ]
 
@@ -87,8 +98,8 @@ def main() -> Path:
         reports_path=settings.interpretation_config.reports_path,
         data_sources=get_data_sources(),
         outlier_config=OutlierConfig(
-            min_length=300_000.0,
-            max_length=1_500_000.0,
+            min_length=1_000,  # 300_000.0,
+            max_length=2_000_000,  # 1_500_000.0,
             suspicious_timestamps=[],
         ),
         confidence_level=settings.interpretation_config.default_confidence_level,
@@ -96,6 +107,9 @@ def main() -> Path:
         palette=settings.interpretation_config.default_palette,
         figure_dpi=settings.interpretation_config.figure_dpi,
         figure_size=settings.interpretation_config.figure_size,
+        boxplot_size=settings.interpretation_config.boxplot_size,
+        lineplot_size=settings.interpretation_config.lineplot_size,
+        optimal_window_size=settings.interpretation_config.optimal_window_size,
     )
 
     # Initialize components
@@ -127,7 +141,7 @@ def main() -> Path:
     print("Генерация визуализаций...")
     plots_path = config.get_plots_path(timestamp)
     plot_paths = plot_generator.generate_all_plots(
-        preprocessed_data, results, plots_path
+        preprocessed_data, results, plots_path,
     )
     results.plot_paths = plot_paths
     print(f"Сгенерировано {len(plot_paths)} графиков")
@@ -136,7 +150,7 @@ def main() -> Path:
     print("Формирование отчета...")
     report_path = config.get_timestamped_report_path(timestamp) / "report.md"
     report_builder.build_report(
-        preprocessed_data, results, original_counts, report_path
+        preprocessed_data, results, original_counts, report_path,
     )
     print(f"Отчет сохранен: {report_path}")
 

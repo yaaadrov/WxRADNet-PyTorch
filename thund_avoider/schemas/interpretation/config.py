@@ -13,20 +13,20 @@ class PlotType(StrEnum):
     BOXPLOT = "boxplot"
     LINEPLOT_SUCCESS = "lineplot_success"
     OPTIMAL_WINDOW = "optimal_window"
-    DUAL_AXIS_MARGINAL = "dual_axis_marginal"
+    COMBINED = "combined"
 
     @property
-    def filename(self) -> str:
-        """Get the filename for this plot type."""
+    def filename_base(self) -> str:
+        """Get the base filename (without extension) for this plot type."""
         match self:
             case PlotType.BOXPLOT:
-                return "boxplot_path_lengths.png"
+                return "boxplot_path_lengths"
             case PlotType.LINEPLOT_SUCCESS:
-                return "lineplot_success_rate.png"
+                return "lineplot_success_rate"
             case PlotType.OPTIMAL_WINDOW:
-                return "optimal_window_eta.png"
-            case PlotType.DUAL_AXIS_MARGINAL:
-                return "dual_axis_marginal_plots.png"
+                return "optimal_window_eta"
+            case PlotType.COMBINED:
+                return "combined_boxplot_lineplot"
 
 
 class DataSourceConfig(BaseModel):
@@ -35,6 +35,10 @@ class DataSourceConfig(BaseModel):
     file_path: Path
     russian_name: str
     color: str = "#89A1AE"
+    plot_pred_valid_rate: bool = False
+    draw_success_lineplot: bool = False
+    draw_optimal_window_plot: bool = False
+    lineplot_marker: str = "o"
 
     def model_post_init(self, __context: Any) -> None:
         """Ensure file_path is absolute."""
@@ -45,8 +49,8 @@ class DataSourceConfig(BaseModel):
 class OutlierConfig(BaseModel):
     """Configuration for outlier filtering."""
 
-    min_length: float = 300_000.0  # Minimum path length in meters
-    max_length: float = 1_500_000.0  # Maximum path length in meters
+    min_length: float = 0.0  # 300_000.0  # Minimum path length in meters
+    max_length: float = 10_000_000.0  #  1_500_000.0  # Maximum path length in meters
     suspicious_timestamps: list[str] = Field(default_factory=list)
 
 
@@ -68,7 +72,11 @@ class ReportConfig(BaseModel):
         ]
     )
     figure_dpi: int = 150
-    figure_size: tuple[int, int] = (12, 8)
+    figure_size: tuple[float, float] = (12, 7.5)
+    # Per-plot figure sizes
+    boxplot_size: tuple[float, float] = (12, 7.5)
+    lineplot_size: tuple[float, float] = (5, 5)
+    optimal_window_size: tuple[float, float] = (5, 5)
 
     def get_timestamped_report_path(self, timestamp: str) -> Path:
         """Get path for timestamped report directory."""
