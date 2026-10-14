@@ -1,15 +1,17 @@
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 
 from app.config import settings
+from app.routers.auth import require_admin
 from app.schemas.experiment import ExperimentResult
 from app.schemas.requests import ResultsRequest
 from app.schemas.responses import ResultsResponse
 
-router = APIRouter()
+# Legacy parquet storage: not used by the experiment frontend, admin-only in production (§3.4)
+router = APIRouter(dependencies=[Depends(require_admin)])
 
 
 @router.post("/results", response_model=ResultsResponse)

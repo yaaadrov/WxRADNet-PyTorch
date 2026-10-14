@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import ab_points, obstacles, results, timestamps
+from app.routers import ab_points, admin, obstacles, participants, results, timestamps, trials
 
 
 @asynccontextmanager
@@ -22,10 +22,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configure CORS for frontend
+# Configure CORS for the frontend (explicit origin allowlist, see CORS_ORIGINS env)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -36,6 +36,9 @@ app.include_router(timestamps.router, prefix="/api", tags=["timestamps"])
 app.include_router(ab_points.router, prefix="/api", tags=["ab-points"])
 app.include_router(obstacles.router, prefix="/api", tags=["obstacles"])
 app.include_router(results.router, prefix="/api", tags=["results"])
+app.include_router(participants.router, prefix="/api", tags=["participants"])
+app.include_router(trials.router, prefix="/api", tags=["trials"])
+app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 
 
 @app.get("/health")

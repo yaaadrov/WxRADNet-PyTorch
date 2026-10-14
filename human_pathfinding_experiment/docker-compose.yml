@@ -1,6 +1,24 @@
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      - POSTGRES_DB=human_pathfinding
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d human_pathfinding"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     ports:
       - "8000:8000"
     volumes:
@@ -12,7 +30,12 @@ services:
       - DATA_PATH=/app/data
       - CONFIG_PATH=/app/config
       - RESULTS_PATH=/app/results
+      - DATABASE_URL=postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/human_pathfinding
+      - RANKING_CSV_PATH=/app/seed/ranking.csv
       - PYTHONPATH=/app
+    depends_on:
+      db:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
@@ -33,3 +56,6 @@ services:
 networks:
   default:
     name: human-pathfinding-network
+
+volumes:
+  postgres_data:

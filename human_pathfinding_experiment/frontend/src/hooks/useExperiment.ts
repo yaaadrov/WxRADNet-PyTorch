@@ -1,18 +1,21 @@
 import { useReducer, useCallback, useEffect } from "react";
-import { api } from "../services/api";
+import { api, setAuthToken } from "../services/api";
 import {
   ExperimentState,
   ExperimentAction,
   Point2D,
-  ObstacleMode,
-  WindowSize,
-  Strategy,
   ObstaclesResponse,
+  QuestionnaireAnswers,
 } from "../types";
 import { SEGMENT_LENGTH_M, SNAP_DISTANCE_M } from "../utils/constants";
 import { distanceMeters, getDirection } from "../utils/geometry";
 
 const initialState: ExperimentState = {
+  trialId: null,
+  trialIndex: 0,
+  trialsTotal: 3,
+  condition: null,
+  isDemo: false,
   timestamp: null,
   obstacleMode: "obstacles",
   windowSize: 1,
@@ -23,15 +26,19 @@ const initialState: ExperimentState = {
   directionVector: null,
   timeIndex: 0,
   allPaths: [],
+  routeSegments: [],
   currentPath: [],
   obstacles: [],
   availableTimeKeys: [],
   pixelTransform: null,
+  visibleArea: null,
   isRunning: false,
   isComplete: false,
   startTime: null,
   loadedTimeKeys: new Set(),
   zoomLevel: 1,
+  numZoomActions: 0,
+  forecastLayersViewed: 0,
   pathValid: null,
   invalidSegments: [],
   validationObstacles: [],
@@ -77,19 +84,29 @@ function findPointAtDistance(
   return null;
 }
 
+/** Fixed demo scenarios shown by the secret ДЕМО button (nothing is stored in the database).
+ *  Order: with forbidden zones -> without anything -> with forecast (same storm as the first one). */
+const DEMO_SCENARIOS = [
+  { condition: "C1" as const, obstacleMode: "hull" as const, windowSize: 1 as const, timestamp: "2023_08_05_13_10_00" },
+  { condition: "C0" as const, obstacleMode: "obstacles" as const, windowSize: 1 as const, timestamp: "2023_09_20_13_00_00" },
+  { condition: "C2" as const, obstacleMode: "hull" as const, windowSize: 7 as const, timestamp: "2023_08_05_13_10_00" },
+];
+
 function experimentReducer(state: ExperimentState, action: ExperimentAction): ExperimentState {
   switch (action.type) {
-    case "SET_TIMESTAMP":
-      return { ...state, timestamp: action.payload };
-
-    case "SET_OBSTACLE_MODE":
-      return { ...state, obstacleMode: action.payload };
-
-    case "SET_WINDOW_SIZE":
-      return { ...state, windowSize: action.payload };
-
-    case "SET_STRATEGY":
-      return { ...state, strategy: action.payload };
+    case "SET_TRIAL":
+      // A new trial starts from a completely clean slate (no memory of previous trials)
+      return {
+        ...initialState,
+        trialId: action.payload.trialId,
+        trialIndex: action.payload.trialIndex,
+        trialsTotal: action.payload.trialsTotal,
+        condition: action.payload.condition,
+        isDemo: action.payload.isDemo,
+        timestamp: action.payload.timestamp,
+        obstacleMode: action.payload.obstacleMode,
+        windowSize: action.payload.windowSize,
+      };
 
     case "SET_AB_POINTS":
       return {
@@ -112,6 +129,7 @@ function experimentReducer(state: ExperimentState, action: ExperimentAction): Ex
         ...state,
         obstacles: action.payload.obstacles,
         availableTimeKeys: action.payload.availableTimeKeys,
+        visibleArea: action.payload.visibleArea,
         loadedTimeKeys: new Set([action.payload.availableTimeKeys[0]]),
       };
 
@@ -154,6 +172,7 @@ function experimentReducer(state: ExperimentState, action: ExperimentAction): Ex
         return {
           ...state,
           allPaths: [...state.allPaths, fullPath],
+          routeSegments: [...state.routeSegments, fullPath],
           currentPath: [],
           currentPosition: state.bPoint,
           isComplete: true,
@@ -198,42 +217,14 @@ function experimentReducer(state: ExperimentState, action: ExperimentAction): Ex
       return {
         ...state,
         currentPath: [], // Clear path - user draws fresh from new position
-        allPaths: [...state.allPaths, confirmedPath],
+        allPaths: [...state.allPaths, fullPath], // Raw stage drawing (includes overshoot beyond the cut)
+        routeSegments: [...state.routeSegments, confirmedPath], // Exact 75 km piece of the flown route
         currentPosition: newPositionAtB ? state.bPoint : point,
         directionVector: direction,
         timeIndex: state.timeIndex + 1,
         isComplete: !!newPositionAtB,
       };
     }
-
-    case "MOVE_AIRCRAFT":
-      return {
-        ...state,
-        currentPosition: action.payload.position,
-        directionVector: action.payload.direction,
-        timeIndex: action.payload.timeIndex,
-      };
-
-    case "COMPLETE_PATH":
-      return {
-        ...state,
-        isComplete: true,
-      };
-
-    case "RESET":
-      return {
-        ...initialState,
-        // Preserve configuration
-        timestamp: state.timestamp,
-        obstacleMode: state.obstacleMode,
-        windowSize: state.windowSize,
-        strategy: state.strategy,
-        // Preserve loaded data for quick restart
-        aPoint: state.aPoint,
-        bPoint: state.bPoint,
-        pixelTransform: state.pixelTransform,
-        availableTimeKeys: state.availableTimeKeys,
-      };
 
     case "START_EXPERIMENT":
       return {
@@ -242,6 +233,7 @@ function experimentReducer(state: ExperimentState, action: ExperimentAction): Ex
         startTime: new Date(),
         timeIndex: 0,
         allPaths: [],
+        routeSegments: [],
         currentPath: [],
         isComplete: false,
         currentPosition: state.aPoint,
@@ -252,14 +244,16 @@ function experimentReducer(state: ExperimentState, action: ExperimentAction): Ex
         pathValid: null,
         invalidSegments: [],
         validationObstacles: [],
-        // Reset loaded time keys
+        // Reset loaded time keys and counters
         loadedTimeKeys: new Set(),
+        numZoomActions: 0,
+        forecastLayersViewed: 0,
       };
 
     case "ADD_TIME_KEY_LAYER": {
       const newLoaded = new Set(state.loadedTimeKeys);
       newLoaded.add(action.payload);
-      return { ...state, loadedTimeKeys: newLoaded };
+      return { ...state, loadedTimeKeys: newLoaded, forecastLayersViewed: state.forecastLayersViewed + 1 };
     }
 
     case "REMOVE_TIME_KEY_LAYER": {
@@ -271,12 +265,12 @@ function experimentReducer(state: ExperimentState, action: ExperimentAction): Ex
 
     case "ZOOM_IN": {
       const newZoom = Math.min(state.zoomLevel * 1.5, 10); // Max 10x zoom
-      return { ...state, zoomLevel: newZoom };
+      return { ...state, zoomLevel: newZoom, numZoomActions: state.numZoomActions + 1 };
     }
 
     case "ZOOM_OUT": {
       const newZoom = Math.max(state.zoomLevel / 1.5, 1); // Min 1x zoom
-      return { ...state, zoomLevel: newZoom };
+      return { ...state, zoomLevel: newZoom, numZoomActions: state.numZoomActions + 1 };
     }
 
     case "SET_VALIDATION":
@@ -286,6 +280,9 @@ function experimentReducer(state: ExperimentState, action: ExperimentAction): Ex
         invalidSegments: action.payload.invalidSegments,
         validationObstacles: action.payload.validationObstacles,
       };
+
+    case "RESET_SESSION":
+      return initialState;
 
     default:
       return state;
@@ -353,6 +350,7 @@ export function useExperiment() {
         payload: {
           obstacles: data.obstacles,
           availableTimeKeys: data.available_time_keys,
+          visibleArea: data.visible_area.map(([x, y]) => ({ x, y })),
         },
       });
     } catch (error) {
@@ -367,25 +365,91 @@ export function useExperiment() {
     }
   }, [state.isRunning, state.isComplete, state.timeIndex, state.pixelTransform, loadObstacles]);
 
-  const setTimestamp = useCallback((timestamp: string) => {
-    dispatch({ type: "SET_TIMESTAMP", payload: timestamp });
+  // ------------------------------------------------------------ participant session
+
+  const loadNextTrial = useCallback(async () => {
+    const trial = await api.getNextTrial();
+    dispatch({
+      type: "SET_TRIAL",
+      payload: {
+        trialId: trial.trial_id,
+        trialIndex: trial.trial_index,
+        trialsTotal: trial.trials_total,
+        condition: trial.condition,
+        timestamp: trial.timestamp,
+        obstacleMode: trial.obstacle_mode,
+        windowSize: trial.window_size,
+        isDemo: false,
+      },
+    });
   }, []);
 
-  const setObstacleMode = useCallback((mode: ObstacleMode) => {
-    dispatch({ type: "SET_OBSTACLE_MODE", payload: mode });
+  const login = useCallback(async (surname: string, name: string, group: string) => {
+    const data = await api.login(surname, name, group);
+    setAuthToken(data.token);
+    await loadNextTrial();
+  }, [loadNextTrial]);
+
+  const startDemo = useCallback(async () => {
+    const data = await api.startDemoSession();
+    setAuthToken(data.token);
+    const scenario = DEMO_SCENARIOS[0];
+    dispatch({ type: "SET_TRIAL", payload: { ...scenario, trialId: null, trialIndex: 1, trialsTotal: DEMO_SCENARIOS.length, isDemo: true } });
   }, []);
 
-  const setWindowSize = useCallback((size: WindowSize) => {
-    dispatch({ type: "SET_WINDOW_SIZE", payload: size });
-  }, []);
+  const nextDemoScenario = useCallback(() => {
+    const index = state.trialIndex; // 1-based within the demo
+    if (index >= DEMO_SCENARIOS.length) return false;
+    const scenario = DEMO_SCENARIOS[index];
+    dispatch({ type: "SET_TRIAL", payload: { ...scenario, trialId: null, trialIndex: index + 1, trialsTotal: DEMO_SCENARIOS.length, isDemo: true } });
+    return true;
+  }, [state.trialIndex]);
 
-  const setStrategy = useCallback((strategy: Strategy) => {
-    dispatch({ type: "SET_STRATEGY", payload: strategy });
-  }, []);
-
-  const startExperiment = useCallback(() => {
+  const startTrial = useCallback(async () => {
+    if (state.isDemo) {
+      // Demo session: no server-side trial, just start locally
+      dispatch({ type: "START_EXPERIMENT" });
+      return;
+    }
+    if (state.trialId === null) return;
+    await api.startTrial(state.trialId);
     dispatch({ type: "START_EXPERIMENT" });
+  }, [state.trialId, state.isDemo]);
+
+  const submitTrial = useCallback(async () => {
+    if (state.trialId === null) return null;
+
+    // Raw per-stage drawings: confirmed stage paths plus the in-progress stage (if any)
+    const stagePaths = state.allPaths.map(path =>
+      path.map(p => [p.x, p.y] as [number, number])
+    );
+    if (state.currentPath.length > 0) {
+      stagePaths.push(state.currentPath.map(p => [p.x, p.y] as [number, number]));
+    }
+
+    // Final flown route split into exact 5-minute intervals
+    const routeSegments = state.routeSegments.map(path =>
+      path.map(p => [p.x, p.y] as [number, number])
+    );
+
+    return api.submitTrial(state.trialId, {
+      all_paths: stagePaths,
+      path: routeSegments,
+      num_zoom_actions: state.numZoomActions,
+      num_forecast_layers_viewed: state.forecastLayersViewed,
+    });
+  }, [state]);
+
+  const submitQuestionnaire = useCallback(async (answers: QuestionnaireAnswers) => {
+    await api.submitQuestionnaire(answers);
   }, []);
+
+  const clearSession = useCallback(() => {
+    setAuthToken(null);
+    dispatch({ type: "RESET_SESSION" });
+  }, []);
+
+  // ---------------------------------------------------------------- drawing actions
 
   const addWaypoint = useCallback((point: Point2D) => {
     dispatch({ type: "ADD_WAYPOINT", payload: point });
@@ -393,10 +457,6 @@ export function useExperiment() {
 
   const confirmSegment = useCallback(() => {
     dispatch({ type: "CONFIRM_SEGMENT" });
-  }, []);
-
-  const reset = useCallback(() => {
-    dispatch({ type: "RESET" });
   }, []);
 
   const addTimeKeyLayer = useCallback((timeKey: string) => {
@@ -416,10 +476,10 @@ export function useExperiment() {
   }, []);
 
   const validatePath = useCallback(async () => {
-    if (!state.timestamp || state.allPaths.length === 0) return;
+    if (!state.timestamp || state.routeSegments.length === 0) return;
 
-    // Convert allPaths to the format expected by API
-    const allPaths = state.allPaths.map(path =>
+    // Validate the final flown route segments (not the raw stage drawings)
+    const allPaths = state.routeSegments.map(path =>
       path.map(p => [p.x, p.y] as [number, number])
     );
 
@@ -441,77 +501,31 @@ export function useExperiment() {
     } catch (error) {
       console.error("Failed to validate path:", error);
     }
-  }, [state.timestamp, state.allPaths, state.strategy]);
+  }, [state.timestamp, state.routeSegments, state.strategy]);
 
   // Validate path when experiment is complete
   useEffect(() => {
-    if (state.isComplete && state.allPaths.length > 0 && state.pathValid === null) {
+    if (state.isComplete && state.routeSegments.length > 0 && state.pathValid === null) {
       validatePath();
     }
-  }, [state.isComplete, state.allPaths, state.pathValid, validatePath]);
-
-  const saveResults = useCallback(async () => {
-    if (!state.timestamp || !state.startTime) return null;
-
-    // Flatten all paths
-    const allPaths = state.allPaths.map(path =>
-      path.map(p => [p.x, p.y] as [number, number])
-    );
-
-    // Include current path if not empty
-    if (state.currentPath.length > 0) {
-      allPaths.push(state.currentPath.map(p => [p.x, p.y] as [number, number]));
-    }
-
-    const totalDistance = [...state.allPaths, state.currentPath].reduce((acc, path) => {
-      return acc + path.reduce((pathAcc, _, i, arr) => {
-        if (i === 0) return 0;
-        return pathAcc + distanceMeters(arr[i - 1], arr[i]);
-      }, 0);
-    }, 0);
-
-    const totalWaypoints = [...state.allPaths, state.currentPath].reduce((acc, path) => acc + path.length, 0);
-
-    const request = {
-      timestamp: state.timestamp,
-      obstacle_mode: state.obstacleMode,
-      window_size: state.windowSize,
-      strategy: state.strategy,
-      prediction_mode: "deterministic",
-      all_paths: allPaths,
-      path: allPaths, // Same as all_paths for now
-      path_valid: state.pathValid ?? true, // Use validated value or true if not validated
-      experiment_duration_seconds: (new Date().getTime() - state.startTime.getTime()) / 1000,
-      timestamp_start: state.startTime.toISOString(),
-      success: state.isComplete,
-      total_waypoints: totalWaypoints,
-      total_distance_m: totalDistance,
-    };
-
-    try {
-      return await api.saveResults(request);
-    } catch (error) {
-      console.error("Failed to save results:", error);
-      return null;
-    }
-  }, [state]);
+  }, [state.isComplete, state.routeSegments, state.pathValid, validatePath]);
 
   return {
     state,
-    setTimestamp,
-    setObstacleMode,
-    setWindowSize,
-    setStrategy,
-    startExperiment,
+    login,
+    startDemo,
+    nextDemoScenario,
+    loadNextTrial,
+    startTrial,
+    submitTrial,
+    submitQuestionnaire,
+    clearSession,
     addWaypoint,
     confirmSegment,
-    reset,
     addTimeKeyLayer,
     removeTimeKeyLayer,
     zoomIn,
     zoomOut,
-    validatePath,
-    saveResults,
     loadObstacles,
   };
 }

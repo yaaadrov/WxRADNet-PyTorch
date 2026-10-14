@@ -1,19 +1,29 @@
 import {
-  TimestampsResponse,
   ABPointsResponse,
-  ObstaclesResponse,
-  ResultsRequest,
   BBoxResponse,
+  LoginResponse,
+  NextTrialResponse,
+  ObstaclesResponse,
+  QuestionnaireAnswers,
+  SubmitTrialResponse,
   ValidationResponse,
 } from "../types";
 
 const API_BASE = "/api";
+
+// Session token is kept in memory only (a page reload requires a fresh login by design)
+let authToken: string | null = null;
+
+export function setAuthToken(token: string | null) {
+  authToken = token;
+}
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...options,
     headers: {
       "Content-Type": "application/json",
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
       ...options?.headers,
     },
   });
@@ -27,8 +37,42 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  async getTimestamps(): Promise<TimestampsResponse> {
-    return fetchJson<TimestampsResponse>(`${API_BASE}/timestamps`);
+  async login(surname: string, name: string, group: string): Promise<LoginResponse> {
+    return fetchJson<LoginResponse>(`${API_BASE}/participants/login`, {
+      method: "POST",
+      body: JSON.stringify({ surname, name, group }),
+    });
+  },
+
+  async startDemoSession(): Promise<{ token: string }> {
+    return fetchJson<{ token: string }>(`${API_BASE}/participants/demo`, { method: "POST" });
+  },
+
+  async getNextTrial(): Promise<NextTrialResponse> {
+    return fetchJson<NextTrialResponse>(`${API_BASE}/trials/next`);
+  },
+
+  async startTrial(trialId: number): Promise<NextTrialResponse> {
+    return fetchJson<NextTrialResponse>(`${API_BASE}/trials/${trialId}/start`, { method: "POST" });
+  },
+
+  async submitTrial(trialId: number, request: {
+    all_paths: Array<Array<[number, number]>>;
+    path: Array<Array<[number, number]>>;
+    num_zoom_actions: number;
+    num_forecast_layers_viewed: number;
+  }): Promise<SubmitTrialResponse> {
+    return fetchJson<SubmitTrialResponse>(`${API_BASE}/trials/${trialId}/submit`, {
+      method: "POST",
+      body: JSON.stringify(request),
+    });
+  },
+
+  async submitQuestionnaire(answers: QuestionnaireAnswers): Promise<{ is_completed: boolean }> {
+    return fetchJson(`${API_BASE}/participants/me/questionnaire`, {
+      method: "POST",
+      body: JSON.stringify(answers),
+    });
   },
 
   async getABPoints(timestamp: string): Promise<ABPointsResponse> {
@@ -70,20 +114,5 @@ export const api = {
       method: "POST",
       body: JSON.stringify(request),
     });
-  },
-
-  async saveResults(request: ResultsRequest): Promise<{ filename: string; message: string }> {
-    return fetchJson(`${API_BASE}/results`, {
-      method: "POST",
-      body: JSON.stringify(request),
-    });
-  },
-
-  async listResults(): Promise<{ results: string[] }> {
-    return fetchJson(`${API_BASE}/results`);
-  },
-
-  getResultsUrl(filename: string): string {
-    return `${API_BASE}/results/${filename}`;
   },
 };

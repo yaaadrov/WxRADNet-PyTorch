@@ -52,6 +52,7 @@ export interface ObstaclesResponse {
   pixel_transform: PixelTransform;
   available_time_keys: string[];
   current_time_index: number;
+  visible_area: Array<[number, number]>;
 }
 
 export interface ABPointsResponse {
@@ -97,6 +98,13 @@ export interface ResultsRequest {
 }
 
 export interface ExperimentState {
+  /** Assigned trial (null until login and trial loading; stays null in demo mode). */
+  trialId: number | null;
+  trialIndex: number;
+  trialsTotal: number;
+  condition: "C0" | "C1" | "C2" | null;
+  /** Demo session (secret button on the login screen): nothing is stored in the database. */
+  isDemo: boolean;
   timestamp: string | null;
   obstacleMode: ObstacleMode;
   windowSize: WindowSize;
@@ -106,37 +114,73 @@ export interface ExperimentState {
   currentPosition: Point2D | null;
   directionVector: Point2D | null;
   timeIndex: number;
+  /** Raw per-stage drawings: everything the participant drew during each 5-minute stage,
+   *  starting fresh from the stage's start position (includes overshoot beyond the 75 km cut). */
   allPaths: Array<Array<Point2D>>;
+  /** Final flown route split into exact 5-minute (75 km) intervals; the last one is shorter (reaches B). */
+  routeSegments: Array<Array<Point2D>>;
   currentPath: Array<Point2D>;
   obstacles: ObstacleLayer[];
   availableTimeKeys: string[];
   pixelTransform: PixelTransform | null;
+  visibleArea: Array<Point2D> | null;
   isRunning: boolean;
   isComplete: boolean;
   startTime: Date | null;
   loadedTimeKeys: Set<string>;
   zoomLevel: number; // 1 = default, >1 = zoomed in
+  /** Number of ZOOM_IN/ZOOM_OUT actions during the trial (secondary metric). */
+  numZoomActions: number;
+  /** Number of extra forecast layers viewed beyond the first one (secondary metric, C2 only). */
+  forecastLayersViewed: number;
   pathValid: boolean | null; // null = not validated yet
   invalidSegments: number[];
   validationObstacles: ObstacleLayer[];
 }
 
 export type ExperimentAction =
-  | { type: "SET_TIMESTAMP"; payload: string }
-  | { type: "SET_OBSTACLE_MODE"; payload: ObstacleMode }
-  | { type: "SET_WINDOW_SIZE"; payload: WindowSize }
-  | { type: "SET_STRATEGY"; payload: Strategy }
+  | { type: "SET_TRIAL"; payload: { trialId: number | null; trialIndex: number; trialsTotal: number; condition: "C0" | "C1" | "C2"; timestamp: string; obstacleMode: ObstacleMode; windowSize: WindowSize; isDemo: boolean } }
   | { type: "SET_AB_POINTS"; payload: { aPoint: Point2D; bPoint: Point2D } }
   | { type: "SET_BBOX"; payload: { pixelTransform: PixelTransform; allTimeKeys: string[] } }
-  | { type: "SET_OBSTACLES"; payload: { obstacles: ObstacleLayer[]; availableTimeKeys: string[] } }
+  | { type: "SET_OBSTACLES"; payload: { obstacles: ObstacleLayer[]; availableTimeKeys: string[]; visibleArea: Array<Point2D> } }
   | { type: "ADD_WAYPOINT"; payload: Point2D }
   | { type: "CONFIRM_SEGMENT" }
-  | { type: "MOVE_AIRCRAFT"; payload: { position: Point2D; direction: Point2D; timeIndex: number } }
-  | { type: "COMPLETE_PATH" }
-  | { type: "RESET" }
   | { type: "START_EXPERIMENT" }
   | { type: "ADD_TIME_KEY_LAYER"; payload: string }
   | { type: "REMOVE_TIME_KEY_LAYER" }
   | { type: "ZOOM_IN" }
   | { type: "ZOOM_OUT" }
-  | { type: "SET_VALIDATION"; payload: { pathValid: boolean; invalidSegments: number[]; validationObstacles: ObstacleLayer[] } };
+  | { type: "SET_VALIDATION"; payload: { pathValid: boolean; invalidSegments: number[]; validationObstacles: ObstacleLayer[] } }
+  | { type: "RESET_SESSION" };
+
+// ---------------------------------------------------------------- Participant session API
+
+export interface LoginResponse {
+  token: string;
+  participant_id: number;
+  is_completed: boolean;
+}
+
+export interface NextTrialResponse {
+  trial_id: number;
+  trial_index: number;
+  trials_total: number;
+  condition: "C0" | "C1" | "C2";
+  obstacle_mode: ObstacleMode;
+  window_size: WindowSize;
+  timestamp: string;
+}
+
+export interface SubmitTrialResponse {
+  trial_id: number;
+  trials_submitted: number;
+  session_finished: boolean;
+}
+
+export interface QuestionnaireAnswers {
+  ease_rating_borders: number;
+  ease_rating_zones: number;
+  ease_rating_forecast: number;
+  awareness_zones_helps: boolean;
+  awareness_forecast_helps: boolean;
+}

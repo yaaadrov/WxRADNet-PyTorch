@@ -1,0 +1,11 @@
+# Deployment artifacts (built locally by scripts/build_data_archive.py, ~90 MB)
+deploy/
+
+# Local build outputs
+node_modules/
+dist/
+__pycache__/
+*.pyc
+
+# Secrets
+.env

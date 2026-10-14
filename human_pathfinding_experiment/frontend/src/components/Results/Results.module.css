@@ -6,6 +6,21 @@
   margin-top: 20px;
 }
 
+.success {
+  color: #28a745;
+  font-weight: 600;
+}
+
+.error {
+  color: #ff5555;
+  font-weight: 600;
+}
+
+.pending {
+  color: #ffc107;
+  font-weight: 600;
+}
+
 .title {
   color: white;
   font-size: 16px;

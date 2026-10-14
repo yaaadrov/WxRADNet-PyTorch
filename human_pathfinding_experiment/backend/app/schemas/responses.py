@@ -2,6 +2,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.enums import ExperimentCondition
+
 
 class BBoxRequest(BaseModel):
     """Request model for pre-calculating bounding box for all time keys."""
@@ -83,6 +85,10 @@ class ObstaclesResponse(BaseModel):
         ge=0,
         description="Current time index in the full time keys list",
     )
+    visible_area: list[list[float]] = Field(
+        ...,
+        description="Oriented bbox polygon of the visible radar area as [[x, y], ...]",
+    )
 
 
 class ValidationResult(BaseModel):
@@ -115,3 +121,69 @@ class ResultsResponse(BaseModel):
 
     filename: str = Field(..., description="Saved parquet filename")
     message: str = Field(..., description="Success message")
+
+
+class LoginResponse(BaseModel):
+    """Response model for participant login."""
+
+    token: str = Field(..., description="Opaque session token (JWT), send as Authorization: Bearer <token>")
+    participant_id: int = Field(..., description="Participant id")
+    is_completed: bool = Field(..., description="Whether the participant already finished all trials")
+
+
+class NextTrialResponse(BaseModel):
+    """Response model for the next trial to run (frontend must not let the participant choose)."""
+
+    trial_id: int = Field(..., description="Trial id, used in start/submit endpoints")
+    trial_index: int = Field(..., ge=1, le=3, description="Position within the session (1..3)")
+    trials_total: int = Field(..., description="Total trials in the session")
+    condition: str = Field(..., description="Experimental condition (C0/C1/C2)")
+    obstacle_mode: str = Field(..., description="Obstacle mode parameter for this condition")
+    window_size: int = Field(..., description="Forecast window size parameter for this condition")
+    timestamp: str = Field(..., description="Timestamp directory name")
+
+
+class SubmitTrialResponse(BaseModel):
+    """Response model for a submitted trial."""
+
+    trial_id: int = Field(..., description="Submitted trial id")
+    trials_submitted: int = Field(..., description="How many trials of this participant are submitted")
+    session_finished: bool = Field(..., description="True when all trials are submitted (show the questionnaire)")
+
+
+class ConditionCount(BaseModel):
+    """Aggregated trial count for one experimental condition."""
+
+    condition: ExperimentCondition = Field(..., description="Experimental condition (C0/C1/C2)")
+    count: int = Field(..., ge=0, description="Number of trials in this condition")
+
+
+class SchemeUsage(BaseModel):
+    """Usage counter of one latin-square assignment scheme."""
+
+    scheme_id: int = Field(..., description="Assignment scheme id")
+    assignments: int = Field(..., ge=0, description="How many participants got this scheme")
+
+
+class TrialsByStatus(BaseModel):
+    """Trial counts grouped by lifecycle status."""
+
+    assigned: int = Field(..., ge=0, description="Trials not started yet")
+    in_progress: int = Field(..., ge=0, description="Trials started but not submitted")
+    submitted: int = Field(..., ge=0, description="Trials submitted")
+
+
+class AdminSummaryResponse(BaseModel):
+    """Response model for the admin dashboard summary (§3.4)."""
+
+    participants_total: int = Field(..., ge=0, description="Registered participants")
+    participants_completed: int = Field(..., ge=0, description="Participants who finished the whole session")
+    trials_by_status: TrialsByStatus = Field(..., description="Trial counts by lifecycle status")
+    submitted_by_condition: list[ConditionCount] = Field(
+        ...,
+        description="Submitted trial counts per condition",
+    )
+    scheme_usage: list[SchemeUsage] = Field(
+        ...,
+        description="Assignments per latin-square scheme (balance check)",
+    )

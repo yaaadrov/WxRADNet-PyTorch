@@ -1,15 +1,13 @@
 import { useEffect, useCallback } from "react";
-import { WindowSize } from "../types";
 
 interface UseKeyboardControlsProps {
   isRunning: boolean;
   isComplete: boolean;
-  windowSize: WindowSize;
+  windowSize: 1 | 7;
   availableTimeKeys: string[];
   loadedTimeKeys: Set<string>;
   onAddTimeKeyLayer: (timeKey: string) => void;
   onRemoveTimeKeyLayer: () => void;
-  onSetWindowSize: (size: WindowSize) => void;
   onConfirmSegment: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -23,7 +21,6 @@ export function useKeyboardControls({
   loadedTimeKeys,
   onAddTimeKeyLayer,
   onRemoveTimeKeyLayer,
-  onSetWindowSize,
   onConfirmSegment,
   onZoomIn,
   onZoomOut,
@@ -72,19 +69,9 @@ export function useKeyboardControls({
           onConfirmSegment();
           break;
         }
-
-        case "1": {
-          onSetWindowSize(1);
-          break;
-        }
-
-        case "7": {
-          onSetWindowSize(7);
-          break;
-        }
       }
     },
-    [isRunning, isComplete, windowSize, availableTimeKeys, loadedTimeKeys, onAddTimeKeyLayer, onRemoveTimeKeyLayer, onSetWindowSize, onConfirmSegment, onZoomIn, onZoomOut]
+    [isRunning, isComplete, windowSize, availableTimeKeys, loadedTimeKeys, onAddTimeKeyLayer, onRemoveTimeKeyLayer, onConfirmSegment, onZoomIn, onZoomOut]
   );
 
   useEffect(() => {

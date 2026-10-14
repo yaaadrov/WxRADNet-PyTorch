@@ -1,0 +1,96 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  gap: 12px;
+}
+
+.title {
+  margin: 0;
+  font-size: 28px;
+}
+
+.subtitle {
+  margin: 0 0 12px;
+  color: #aaaaaa;
+  font-size: 15px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 320px;
+  padding: 24px;
+  border: 1px solid #333333;
+  border-radius: 10px;
+  background: #111111;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 14px;
+  color: #cccccc;
+}
+
+.input {
+  padding: 10px 12px;
+  border: 1px solid #444444;
+  border-radius: 6px;
+  background: #000000;
+  color: #ffffff;
+  font-size: 15px;
+}
+
+.input:focus {
+  outline: none;
+  border-color: #888888;
+}
+
+.error {
+  color: #ff5555;
+  font-size: 14px;
+}
+
+.submitButton {
+  margin-top: 6px;
+  padding: 12px;
+  border: none;
+  border-radius: 6px;
+  background: #2f7d4f;
+  color: #ffffff;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.submitButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Secret demo button: intentionally subtle (small, low contrast, bottom of the screen) */
+.demoButton {
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  padding: 4px 10px;
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  background: transparent;
+  color: #2a2a2a;
+  font-size: 12px;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+
+.demoButton:hover {
+  color: #ffd700;
+  border-color: #b8860b;
+}

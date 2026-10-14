@@ -1,88 +1,52 @@
-import { useState, useEffect } from "react";
-import { api } from "../../services/api";
 import styles from "./Results.module.css";
 
 interface ResultsSummaryProps {
-  onSave: () => Promise<{ filename: string; message: string } | null>;
   isComplete: boolean;
-  onReset: () => void;
+  pathValid: boolean | null;
+  invalidSegments: number[];
+  trialIndex: number;
+  trialsTotal: number;
+  isDemo: boolean;
+  submitting: boolean;
+  error: string | null;
+  onNext: () => void;
 }
 
-export function ResultsSummary({ onSave, isComplete, onReset }: ResultsSummaryProps) {
-  const [savedFiles, setSavedFiles] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [lastSaved, setLastSaved] = useState<string | null>(null);
+export function ResultsSummary({
+  isComplete,
+  pathValid,
+  invalidSegments,
+  trialIndex,
+  trialsTotal,
+  isDemo,
+  submitting,
+  error,
+  onNext,
+}: ResultsSummaryProps) {
+  if (!isComplete) return null;
 
-  useEffect(() => {
-    api.listResults()
-      .then((data) => setSavedFiles(data.results))
-      .catch(console.error);
-  }, []);
+  const validationStatus = pathValid === null
+    ? "Проверка маршрута…"
+    : pathValid
+      ? "Маршрут корректен"
+      : `Некорректные участки: ${invalidSegments.join(", ")}`;
 
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const result = await onSave();
-      if (result) {
-        setLastSaved(result.filename);
-        // Refresh list
-        const data = await api.listResults();
-        setSavedFiles(data.results);
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDownload = (filename: string) => {
-    window.open(api.getResultsUrl(filename), "_blank");
-  };
+  const isLastTrial = trialIndex >= trialsTotal;
+  const nextLabel = isDemo
+    ? (isLastTrial ? "Вернуться ко входу" : "Следующий демо-сценарий")
+    : (isLastTrial ? "Перейти к опросу" : "Перейти к следующему эксперименту");
 
   return (
     <div className={styles.container}>
-      <h3 className={styles.title}>Results</h3>
-
-      {isComplete && (
-        <div className={styles.actions}>
-          <button
-            className={styles.saveButton}
-            onClick={handleSave}
-            disabled={saving}
-          >
-            {saving ? "Saving..." : "Save Results"}
-          </button>
-          <button className={styles.resetButton} onClick={onReset}>
-            New Experiment
-          </button>
-        </div>
-      )}
-
-      {lastSaved && (
-        <div className={styles.savedMessage}>
-          Saved: {lastSaved}
-        </div>
-      )}
-
-      <div className={styles.fileList}>
-        <h4 className={styles.subtitle}>Saved Files</h4>
-        {savedFiles.length === 0 ? (
-          <p className={styles.empty}>No saved results yet</p>
-        ) : (
-          <ul className={styles.list}>
-            {savedFiles.map((file) => (
-              <li key={file} className={styles.listItem}>
-                <span className={styles.filename}>{file}</span>
-                <button
-                  className={styles.downloadButton}
-                  onClick={() => handleDownload(file)}
-                >
-                  Download
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+      <div className={styles.actions}>
+        <span className={pathValid === true ? styles.success : pathValid === false ? styles.error : styles.pending}>
+          {validationStatus}
+        </span>
+        <button className={styles.saveButton} onClick={onNext} disabled={submitting || (!isDemo && pathValid === null)}>
+          {submitting ? "Отправка…" : nextLabel}
+        </button>
       </div>
+      {error && <div className={styles.savedMessage}>{error}</div>}
     </div>
   );
 }

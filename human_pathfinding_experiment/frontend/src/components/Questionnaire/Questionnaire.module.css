@@ -1,0 +1,74 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.title {
+  margin: 0;
+}
+
+.subtitle {
+  margin: 0;
+  color: #aaaaaa;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid #333333;
+  border-radius: 10px;
+  background: #111111;
+}
+
+.scaleLegend {
+  color: #888888;
+  font-size: 13px;
+}
+
+.question {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.questionText {
+  font-size: 15px;
+}
+
+.scaleRow {
+  display: flex;
+  gap: 14px;
+}
+
+.scaleOption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.error {
+  color: #ff5555;
+  font-size: 14px;
+}
+
+.submitButton {
+  align-self: center;
+  padding: 12px 40px;
+  border: none;
+  border-radius: 6px;
+  background: #2f7d4f;
+  color: #ffffff;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.submitButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

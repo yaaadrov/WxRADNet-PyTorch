@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.config import MASKING_STRATEGY
+from app.db.models import Participant
+from app.routers.auth import get_current_participant
 from app.schemas.requests import ObstaclesRequest, ValidatePathRequest
 from app.schemas.responses import BBoxRequest, BBoxResponse, ObstaclesResponse, ValidationResponse, ValidationResult
 from app.services.data_service import DataService
@@ -14,7 +16,7 @@ _geometry_service = GeometryService()
 
 
 @router.post("/obstacles/bbox", response_model=BBoxResponse)
-async def get_bbox_for_experiment(request: BBoxRequest):
+async def get_bbox_for_experiment(request: BBoxRequest, _: Participant = Depends(get_current_participant)):
     """
     Pre-calculate bounding box for the entire experiment.
 
@@ -78,7 +80,7 @@ async def get_bbox_for_experiment(request: BBoxRequest):
 
 
 @router.post("/obstacles", response_model=ObstaclesResponse)
-async def get_obstacles(request: ObstaclesRequest):
+async def get_obstacles(request: ObstaclesRequest, _: Participant = Depends(get_current_participant)):
     """
     Get obstacles for the current position and direction.
 
@@ -164,6 +166,7 @@ async def get_obstacles(request: ObstaclesRequest):
             pixel_transform=pixel_transform,
             available_time_keys=available_time_keys,
             current_time_index=request.time_index,
+            visible_area=[[x, y] for x, y in bbox.exterior.coords],
         )
 
     except FileNotFoundError as e:
@@ -184,7 +187,7 @@ async def get_obstacles(request: ObstaclesRequest):
 
 
 @router.post("/obstacles/validate", response_model=ValidationResponse)
-async def validate_path(request: ValidatePathRequest):
+async def validate_path(request: ValidatePathRequest, _: Participant = Depends(get_current_participant)):
     """
     Validate path segments against concave hull obstacles.
 

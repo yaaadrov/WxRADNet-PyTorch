@@ -12,8 +12,11 @@ interface PathfindingCanvasProps {
   directionVector: Point2D | null;
   obstacles: ObstacleLayer[];
   loadedTimeKeys: Set<string>;
-  allPaths: Point2D[][];
+  /** Final flown route segments (exact 5-minute pieces) drawn as solid traveled lines. */
+  routeSegments: Point2D[][];
   currentPath: Point2D[];
+  /** Outline of the visible radar area (oriented bbox) drawn before obstacles. */
+  visibleArea: Array<Point2D> | null;
   pixelTransform: PixelTransform | null;
   onWaypointAdd: (point: Point2D) => void;
   obstacleMode: "obstacles" | "hull";
@@ -33,8 +36,9 @@ export function PathfindingCanvas({
   directionVector,
   obstacles,
   loadedTimeKeys,
-  allPaths,
+  routeSegments,
   currentPath,
+  visibleArea,
   pixelTransform,
   onWaypointAdd,
   obstacleMode,
@@ -138,6 +142,15 @@ export function PathfindingCanvas({
       }
     }
 
+    // Draw the visible radar area frame (before obstacles so it never covers them)
+    if (visibleArea && visibleArea.length >= 3) {
+      ctx.strokeStyle = "#555555";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      drawPath(ctx, [...visibleArea, visibleArea[0]], toPixel);
+      ctx.setLineDash([]);
+    }
+
     // Draw obstacles for loaded time keys
     const sortedLayers = [...obstacles]
       .filter((layer) => loadedTimeKeys.has(layer.time_key))
@@ -192,7 +205,7 @@ export function PathfindingCanvas({
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
-    allPaths.forEach((path, index) => {
+    routeSegments.forEach((path, index) => {
       if (isComplete) {
         // When complete, show green for valid segments, red for invalid
         ctx.strokeStyle = invalidSegments.includes(index) ? "#ff0000" : "#00ff00";
@@ -284,7 +297,7 @@ export function PathfindingCanvas({
         ctx.fill();
       }
     });
-  }, [pixelTransform, aPoint, bPoint, currentPosition, directionVector, obstacles, loadedTimeKeys, allPaths, currentPath, mousePos, isSnapped, toPixel, obstacleMode, zoomLevel, isComplete, invalidSegments, validationObstacles]);
+  }, [pixelTransform, aPoint, bPoint, currentPosition, directionVector, obstacles, loadedTimeKeys, routeSegments, currentPath, visibleArea, mousePos, isSnapped, toPixel, obstacleMode, zoomLevel, isComplete, invalidSegments, validationObstacles]);
 
   const handleMouseMove = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {

@@ -1,0 +1,32 @@
+# Render blueprint for the backend (§3.4): Docker web service + external managed Postgres.
+#
+# Deploy: Render Dashboard -> New -> Blueprint -> point it at this repository
+# (root directory: human_pathfinding_experiment).
+#
+# Postgres (Supabase or Neon) is created manually outside Render — create the project,
+# copy the connection string into DATABASE_URL below (Dashboard -> Environment).
+# Apply migrations from any machine: cd backend && DATABASE_URL=... uv run alembic upgrade head
+# (or just restart the service — the container applies migrations at startup).
+
+services:
+  - type: web
+    name: human-pathfinding-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: DATA_ARCHIVE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      # Free instances spin down after ~15 min idle (cold start ~30-50 s).
+      # Hit GET /health (or open the frontend) a few minutes before the session.

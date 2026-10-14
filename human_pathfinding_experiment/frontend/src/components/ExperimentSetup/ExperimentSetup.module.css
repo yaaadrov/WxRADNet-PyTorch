@@ -1,82 +1,50 @@
 .container {
-  background: #1a1a1a;
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 20px;
-  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 24px;
+  border: 1px solid #333333;
+  border-radius: 10px;
+  background: #111111;
+}
+
+.demoBadge {
+  padding: 4px 12px;
+  border: 1px solid #b8860b;
+  border-radius: 6px;
+  background: #33270a;
+  color: #ffd700;
+  font-size: 13px;
 }
 
 .row {
   display: flex;
-  align-items: center;
-  margin-bottom: 15px;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.attempt {
+  font-size: 20px;
+  font-weight: 600;
 }
 
 .label {
-  color: white;
-  font-size: 14px;
-  min-width: 120px;
+  color: #aaaaaa;
+  font-size: 15px;
 }
 
-.select {
-  background: #2a2a2a;
-  color: white;
-  border: 1px solid #444;
-  border-radius: 4px;
-  padding: 8px 12px;
-  font-size: 14px;
-  min-width: 200px;
-}
-
-.select:focus {
-  outline: none;
-  border-color: #666;
-}
-
-.radioGroup {
-  display: flex;
-  gap: 20px;
-}
-
-.radioLabel {
-  color: white;
-  font-size: 14px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.radioLabel input[type="radio"] {
-  cursor: pointer;
-}
-
-.warning {
-  background: #3d2f00;
-  border: 1px solid #665200;
-  border-radius: 4px;
-  padding: 10px 15px;
-  color: #ffc107;
-  font-size: 13px;
-  margin-bottom: 15px;
+.value {
+  font-size: 15px;
 }
 
 .startButton {
-  background: #0066cc;
-  color: white;
+  margin-top: 8px;
+  padding: 12px 40px;
   border: none;
-  border-radius: 4px;
-  padding: 12px 24px;
+  border-radius: 6px;
+  background: #2f7d4f;
+  color: #ffffff;
   font-size: 16px;
   cursor: pointer;
-  width: 100%;
-}
-
-.startButton:hover:not(:disabled) {
-  background: #0052a3;
-}
-
-.startButton:disabled {
-  background: #444;
-  cursor: not-allowed;
 }

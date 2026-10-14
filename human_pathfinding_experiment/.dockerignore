@@ -1,0 +1,7 @@
+# Keep the docker build context small (backend image only needs backend sources and seed data)
+frontend/
+backend/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.mypy_cache/
+.claude/
