@@ -13,26 +13,6 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Ensure results directory exists
     settings.results_path.mkdir(parents=True, exist_ok=True)
-
-    if settings.warm_cache:
-        # Preload all active timestamps (blocking, startup only): eliminates the one-time
-        # cold parse on the first request of every timestamp during the experiment
-        from sqlmodel import Session, select
-
-        from app.db.engine import engine
-        from app.db.models import ExperimentTimestamp
-        from app.services.data_service import warm_obstacle_cache
-
-        with Session(engine) as session:
-            keys = [
-                ts.ts_key
-                for ts in session.exec(
-                    select(ExperimentTimestamp).where(ExperimentTimestamp.is_active == True)  # noqa: E712
-                ).all()
-            ]
-        warmed = warm_obstacle_cache(keys)
-        print(f"warmed obstacle cache: {warmed}/{len(keys)} timestamps")
-
     yield
 
 
@@ -52,8 +32,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Compress large GeoJSON responses (an obstacles payload shrinks ~7x) for slow links
-app.add_middleware(GZipMiddleware, minimum_size=1024)
+# Compress large GeoJSON responses (an obstacles payload shrinks ~7x) for slow links.
+# Low compresslevel: JSON compresses well anyway, and CPU is scarce on small plans
+# (level 9 measured ~1-2 s per request on Render free)
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=1)
 
 # Include routers
 app.include_router(timestamps.router, prefix="/api", tags=["timestamps"])

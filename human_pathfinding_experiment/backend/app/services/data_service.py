@@ -10,8 +10,8 @@ import pandas as pd
 from app.config import settings
 
 
-# Cache size is env-driven: small plans keep 2 timestamps, hosts that warm all
-# timestamps at startup (see WARM_CACHE) raise it above the timestamp count
+# Cache size is env-driven to bound memory on small hosting plans: one timestamp
+# is ~110 MB (Render free 512 MB runs safely with 1)
 _CACHE_SIZE = int(os.environ.get("OBSTACLE_CACHE_SIZE", "2"))
 
 
@@ -20,8 +20,7 @@ def _load_timestamp_obstacles(timestamp: str) -> tuple[list[str], dict[str, gpd.
     """Load and cache the obstacle GeoDataFrames of one timestamp.
 
     Module-level so the cache is shared across service instances (uvicorn keeps a single
-    worker process). maxsize bounds memory on small hosting plans (default 2 timestamps,
-    ~110 MB each).
+    worker process).
     """
     data_dir = settings.data_path / timestamp
     time_keys = sorted(f.stem for f in data_dir.glob("*.csv") if f.stem)
@@ -32,21 +31,6 @@ def _load_timestamp_obstacles(timestamp: str) -> tuple[list[str], dict[str, gpd.
         for time_key in time_keys
     }
     return time_keys, dict_obstacles
-
-
-def warm_obstacle_cache(timestamps: list[str]) -> int:
-    """Preload the obstacle GeoDataFrames of the given timestamps (blocking; startup only).
-
-    Skips missing timestamp directories. Returns the number of warmed timestamps.
-    """
-    warmed = 0
-    for timestamp in timestamps:
-        try:
-            _load_timestamp_obstacles(timestamp)
-            warmed += 1
-        except FileNotFoundError:
-            print(f"warm cache: timestamp {timestamp} not found, skipping")
-    return warmed
 
 
 def _load_geodataframe(file_path: Path) -> gpd.GeoDataFrame:

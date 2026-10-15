@@ -28,5 +28,8 @@ services:
         sync: false
       - key: CORS_ORIGINS
         sync: false
+      # Bounded memory: one cached timestamp is ~110 MB (safe on the 512 MB free plan)
+      - key: OBSTACLE_CACHE_SIZE
+        value: "1"
       # Free instances spin down after ~15 min idle (cold start ~30-50 s).
       # Hit GET /health (or open the frontend) a few minutes before the session.

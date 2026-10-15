@@ -22,6 +22,14 @@ The backend container applies alembic migrations, seeds the condition-order sche
 
 ## Deployment (production)
 
+Two options (details in `DEPLOY_GUIDE.md`):
+
+- **VPS (recommended for the experiment day):** the whole stack (postgres + backend + nginx-frontend)
+  runs on one server via `docker compose up -d --build`; full CPU/RAM, no idle spin-down.
+- **Render + Vercel (free fallback, already deployed):** frontend on Vercel (proxies `/api` via
+  rewrites), backend on Render free (~0.1 CPU / 512 MB — updates take ~1–1.5 s, first load of
+  a timestamp ~10 s), database on Supabase/Neon.
+
 | Component | Host | Notes |
 |---|---|---|
 | Frontend | **Vercel** (free) | Static Vite build; `/api/*` is proxied to the backend via `frontend/vercel.json` rewrites |

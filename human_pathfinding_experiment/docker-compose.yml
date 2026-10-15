@@ -32,6 +32,9 @@ services:
       - RESULTS_PATH=/app/results
       - DATABASE_URL=postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/human_pathfinding
       - PYTHONPATH=/app
+      - JWT_SECRET=${JWT_SECRET:-}
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-}
+      - OBSTACLE_CACHE_SIZE=${OBSTACLE_CACHE_SIZE:-2}
     depends_on:
       db:
         condition: service_healthy
