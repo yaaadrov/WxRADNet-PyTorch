@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from app.config import settings
 from app.routers import ab_points, admin, obstacles, participants, results, timestamps, trials
@@ -30,6 +31,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Compress large GeoJSON responses (an obstacles payload shrinks ~7x) for slow links
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # Include routers
 app.include_router(timestamps.router, prefix="/api", tags=["timestamps"])
