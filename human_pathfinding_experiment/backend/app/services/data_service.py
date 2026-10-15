@@ -9,6 +9,33 @@ import pandas as pd
 from app.config import settings
 
 
+@lru_cache(maxsize=2)
+def _load_timestamp_obstacles(timestamp: str) -> tuple[list[str], dict[str, gpd.GeoDataFrame]]:
+    """Load and cache the obstacle GeoDataFrames of one timestamp.
+
+    Module-level so the cache is shared across service instances (uvicorn keeps a single
+    worker process). maxsize=2 bounds memory on small hosting plans: the active
+    participant's timestamp and one neighbour.
+    """
+    data_dir = settings.data_path / timestamp
+    time_keys = sorted(f.stem for f in data_dir.glob("*.csv") if f.stem)
+    if not time_keys:
+        raise FileNotFoundError(f"No CSV files found in directory: {data_dir}")
+    dict_obstacles = {
+        time_key: _load_geodataframe(data_dir / f"{time_key}.csv")
+        for time_key in time_keys
+    }
+    return time_keys, dict_obstacles
+
+
+def _load_geodataframe(file_path: Path) -> gpd.GeoDataFrame:
+    """Load a GeoDataFrame from a CSV file with WKT geometry columns."""
+    df = pd.read_csv(file_path)
+    for col in df.columns:
+        df[col] = gpd.GeoSeries.from_wkt(df[col])
+    return gpd.GeoDataFrame(df, geometry="geometry")
+
+
 class DataService:
     """Service for loading and caching experiment data."""
 
@@ -95,29 +122,11 @@ class DataService:
 
     def load_geodataframe_from_csv(self, file_path: Path) -> gpd.GeoDataFrame:
         """Load GeoDataFrame from a CSV file with WKT geometry."""
-        df = pd.read_csv(file_path)
-        for col in df.columns:
-            df[col] = gpd.GeoSeries.from_wkt(df[col])
-        gdf = gpd.GeoDataFrame(df, geometry="geometry")
-        return gdf
-
-    def collect_obstacles(
-        self,
-        directory_path: Path,
-        time_keys: list[str],
-    ) -> dict[str, gpd.GeoDataFrame]:
-        """Collect GeoDataFrames with obstacles data into a dictionary."""
-        return {
-            time_key: self.load_geodataframe_from_csv(directory_path / f"{time_key}.csv")
-            for time_key in time_keys
-        }
+        return _load_geodataframe(file_path)
 
     def get_obstacles_for_timestamp(
         self,
         timestamp: str,
     ) -> tuple[list[str], dict[str, gpd.GeoDataFrame]]:
-        """Load obstacles for a timestamp (reuses logic from run_masked_dynamic_avoider)."""
-        data_dir = self.get_data_dir(timestamp)
-        time_keys = self.extract_time_keys(data_dir)
-        dict_obstacles = self.collect_obstacles(data_dir, time_keys)
-        return time_keys, dict_obstacles
+        """Load obstacles for a timestamp (memory-cached; first call parses the CSVs)."""
+        return _load_timestamp_obstacles(timestamp)
