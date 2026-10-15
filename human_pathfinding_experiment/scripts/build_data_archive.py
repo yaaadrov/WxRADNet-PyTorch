@@ -1,19 +1,16 @@
 import argparse
-import csv
 import sys
 import tarfile
 from pathlib import Path
 
-# Extra timestamp used by the frontend ДЕМО scenarios (C0 case), not part of ranking.csv
-DEMO_TIMESTAMP: str = "2023_09_20_13_00_00"
+# Canonical experiment timestamps (single source of truth, shared with the DB seed script)
+TIMESTAMPS_FILE = Path(__file__).resolve().parents[1] / "backend" / "scripts" / "experiment_timestamps.txt"
 
 
-def selected_timestamps(ranking_path: Path) -> list[str]:
-    """Read the selected experiment timestamps from the ranking CSV (§2.1)."""
-    with open(ranking_path, newline="") as f:
-        return sorted(
-            row["timestamp"] for row in csv.DictReader(f) if row["selected"] == "True"
-        )
+def experiment_timestamps(path: Path = TIMESTAMPS_FILE) -> list[str]:
+    """Read the experiment timestamp list (one per line)."""
+    with open(path, encoding="utf-8") as file:
+        return sorted({line.strip() for line in file if line.strip()})
 
 
 def build_archive(timestamps: list[str], data_dir: Path, config_dir: Path, output_path: Path) -> None:
@@ -41,10 +38,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=base / "deploy" / "data.tar.gz")
     args = parser.parse_args()
 
-    timestamps = selected_timestamps(base / "timestamp_selection" / "ranking.csv")
-    if DEMO_TIMESTAMP not in timestamps:
-        timestamps.append(DEMO_TIMESTAMP)
-
+    timestamps = experiment_timestamps()
     build_archive(timestamps, repo_root / "data", repo_root / "config", args.output)
 
     size_mb = args.output.stat().st_size / 1e6

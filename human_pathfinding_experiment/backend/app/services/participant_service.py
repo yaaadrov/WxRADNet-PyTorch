@@ -1,3 +1,4 @@
+import itertools
 import math
 import random
 from datetime import datetime, timezone
@@ -6,7 +7,7 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.config import settings
-from app.db.models import AssignmentScheme, ExperimentTimestamp, Participant, ParticipantAssignment, Trial
+from app.db.models import AssignmentScheme, ExperimentTimestamp, Participant, ParticipantAssignment, TimestampBlockMember, Trial
 from app.schemas.enums import ExperimentCondition, TimestampBlock, TrialStatus
 from app.schemas.requests import QuestionnaireRequest
 from app.services.data_service import DataService
@@ -178,15 +179,24 @@ class ParticipantService:
     # --------------------------------------------------------------- helpers
 
     def _assign_scheme(self, participant: Participant, scheme: AssignmentScheme) -> None:
-        """Create the scheme assignment and all trials for the session."""
-        self._session.add(ParticipantAssignment(participant_id=participant.id, scheme_id=scheme.id))  # type: ignore[arg-type]
-        for trial_index in range(1, settings.trials_per_participant + 1):
-            condition = getattr(scheme, f"order_{trial_index}")
-            timestamp = self._pick_least_used_timestamp(condition, scheme)
+        """Create the scheme assignment and all trials for the session.
+
+        The participant gets the least-used timestamp triple; the session conditions come
+        from the scheme's presentation order and are paired with the triple's timestamps
+        by the least-used (timestamp, condition) bijection.
+        """
+        block = self._pick_least_used_block()
+        self._session.add(
+            ParticipantAssignment(participant_id=participant.id, scheme_id=scheme.id, block=block)  # type: ignore[arg-type]
+        )
+
+        conditions = [getattr(scheme, f"order_{i}") for i in range(1, settings.trials_per_participant + 1)]
+        pairing = self._pick_timestamp_pairing(block, conditions)
+        for trial_index, condition in enumerate(conditions, start=1):
             self._session.add(
                 Trial(
                     participant_id=participant.id,
-                    timestamp_id=timestamp.id,
+                    timestamp_id=pairing[condition].id,  # type: ignore[arg-type]
                     condition=condition,
                     trial_index=trial_index,
                     status=TrialStatus.ASSIGNED,
@@ -211,44 +221,66 @@ class ParticipantService:
         min_usage = min(usage.get(s.id, 0) for s in schemes)
         return random.choice([s for s in schemes if usage.get(s.id, 0) == min_usage])
 
-    def _pick_least_used_timestamp(
-        self, condition: ExperimentCondition, scheme: AssignmentScheme
-    ) -> ExperimentTimestamp:
-        """Pick the least-used active timestamp of the block mapped to this condition.
+    def _pick_least_used_block(self) -> TimestampBlock:
+        """Pick randomly among the timestamp triples assigned to the fewest participants.
 
-        Usage is counted per (timestamp, condition) so that each timestamp eventually
-        appears under each condition roughly equally (§1.2 greedy balancer).
+        Random tie-break (instead of label order) decorrelates triple selection between
+        participants arriving one after another.
         """
-        block = self._block_for_condition(condition, scheme)
-        candidates = self._session.exec(
-            select(ExperimentTimestamp).where(
-                ExperimentTimestamp.block == block,
-                ExperimentTimestamp.is_active == True,  # noqa: E712  (SQLModel comparison)
-            )
-        ).all()
-        if not candidates:
-            raise ParticipantError(f"Нет активных timestamp'ов в блоке {block.value}", status_code=500)
-
         usage = {
             row[0]: row[1]
             for row in self._session.exec(
-                select(Trial.timestamp_id, func.count())
-                .where(Trial.condition == condition)
-                .group_by(Trial.timestamp_id)
+                select(ParticipantAssignment.block, func.count()).group_by(ParticipantAssignment.block)
             ).all()
         }
-        return min(candidates, key=lambda ts: (usage.get(ts.id, 0), ts.id or 0))
+        blocks = list(TimestampBlock)
+        min_usage = min(usage.get(block, 0) for block in blocks)
+        return random.choice([block for block in blocks if usage.get(block, 0) == min_usage])
 
-    def _block_for_condition(self, condition: ExperimentCondition, scheme: AssignmentScheme) -> TimestampBlock:
-        """Resolve the block assigned to this condition in the participant's scheme."""
-        match condition:
-            case scheme.block_a_condition:
-                return TimestampBlock.A
-            case scheme.block_b_condition:
-                return TimestampBlock.B
-            case scheme.block_c_condition:
-                return TimestampBlock.C
-        raise ParticipantError(f"Блок для условия {condition.value} не найден", status_code=500)
+    def _pick_timestamp_pairing(
+        self,
+        block: TimestampBlock,
+        conditions: list[ExperimentCondition],
+    ) -> dict[ExperimentCondition, ExperimentTimestamp]:
+        """Pair the session conditions with the participant's triple timestamps.
+
+        Among all bijections of the triple's active timestamps onto the conditions, picks
+        the one whose resulting (timestamp, condition) usage cells are closest to the global
+        counts (squared-count score, random tie-break) — each timestamp eventually appears
+        under each condition roughly equally (§1.2 greedy balancer).
+        """
+        candidates = self._session.exec(
+            select(ExperimentTimestamp)
+            .join(TimestampBlockMember, TimestampBlockMember.timestamp_id == ExperimentTimestamp.id)
+            .where(
+                TimestampBlockMember.block == block,
+                ExperimentTimestamp.is_active == True,  # noqa: E712  (SQLModel comparison)
+            )
+        ).all()
+        if len(candidates) != len(conditions):
+            raise ParticipantError(
+                f"В тройке {block.value} недостаточно активных timestamp'ов", status_code=500
+            )
+
+        usage = {
+            (row[0], row[1]): row[2]
+            for row in self._session.exec(
+                select(Trial.timestamp_id, Trial.condition, func.count()).group_by(
+                    Trial.timestamp_id, Trial.condition
+                )
+            ).all()
+        }
+
+        def score(pairing: tuple[ExperimentTimestamp, ...]) -> int:
+            return sum((usage.get((ts.id, condition), 0) + 1) ** 2 for condition, ts in zip(conditions, pairing))
+
+        best_score = min(score(permutation) for permutation in itertools.permutations(candidates))
+        best_pairings = [
+            permutation
+            for permutation in itertools.permutations(candidates)
+            if score(permutation) == best_score
+        ]
+        return dict(zip(conditions, random.choice(best_pairings)))
 
     def _ensure_path_reaches_b(self, trial: Trial, path: list[list[tuple[float, float]]]) -> None:
         """Minimal sanity check: the final route must reach point B (§3.2)."""

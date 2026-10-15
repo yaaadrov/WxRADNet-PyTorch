@@ -1,81 +1,89 @@
-import csv
 import itertools
-import os
+import random
 from pathlib import Path
 
 from sqlmodel import Session, func, select
 
 from app.db.engine import engine
-from app.db.models import AssignmentScheme, ExperimentTimestamp
+from app.db.models import AssignmentScheme, ExperimentTimestamp, TimestampBlockMember
 from app.schemas.enums import ExperimentCondition, TimestampBlock
 
 
-# One-time seeding script: fills assignment_schemes (Latin square, §1.2) and timestamps (§2.1).
-# RANKING_CSV_PATH env override lets the Docker image point at the baked-in CSV copy.
-_DEFAULT_RANKING_PATH = Path(__file__).resolve().parents[2] / "timestamp_selection" / "ranking.csv"
-RANKING_CSV_PATH = Path(os.environ.get("RANKING_CSV_PATH", _DEFAULT_RANKING_PATH))
-EXPECTED_SCHEME_COUNT = 18
+# One-time seeding script: fills assignment_schemes (condition orders) and timestamps
+# partitioned into timestamp triples (blocks).
+_DEFAULT_TIMESTAMPS_PATH = Path(__file__).resolve().parent / "experiment_timestamps.txt"
+TIMESTAMPS_PATH = Path(_DEFAULT_TIMESTAMPS_PATH)
+EXPECTED_SCHEME_COUNT = 6  # one per condition presentation order
+
+# Fixed shuffle seed: the script re-runs on every container start, and the triple layout
+# must stay identical across restarts (a mid-experiment reshuffle would corrupt balance)
+TRIPLE_SHUFFLE_SEED = 20261015
 
 # All six condition presentation orders (permutations of C0, C1, C2)
 ORDER_PERMUTATIONS = list(itertools.permutations(ExperimentCondition))
 
-# Three block-to-condition mappings: (block_a, block_b, block_c); cyclic shifts of (C0, C1, C2)
-BLOCK_MAPPINGS = [
-    (ExperimentCondition.C0, ExperimentCondition.C1, ExperimentCondition.C2),
-    (ExperimentCondition.C1, ExperimentCondition.C2, ExperimentCondition.C0),
-    (ExperimentCondition.C2, ExperimentCondition.C0, ExperimentCondition.C1),
-]
 
-BLOCK_CYCLE = [TimestampBlock.A, TimestampBlock.B, TimestampBlock.C]
+def load_experiment_timestamps(path: Path = TIMESTAMPS_PATH) -> list[str]:
+    """Read the canonical experiment timestamp list (one per line)."""
+    with open(path, encoding="utf-8") as file:
+        return sorted({line.strip() for line in file if line.strip()})
 
 
 class SchemeGenerator:
-    """Generates the 18 Latin square assignment schemes (6 orders x 3 block mappings)."""
+    """Generates the 6 assignment schemes: one per condition presentation order."""
 
     @classmethod
     def generate(cls) -> list[AssignmentScheme]:
-        """Build all unique session schemes."""
+        """Build all session schemes (timestamps come from the assigned triple, not the scheme)."""
         return [
-            AssignmentScheme(
-                block_a_condition=block_mapping[0],
-                block_b_condition=block_mapping[1],
-                block_c_condition=block_mapping[2],
-                order_1=order[0],
-                order_2=order[1],
-                order_3=order[2],
-            )
-            for order, block_mapping in itertools.product(ORDER_PERMUTATIONS, BLOCK_MAPPINGS)
+            AssignmentScheme(order_1=order[0], order_2=order[1], order_3=order[2])
+            for order in ORDER_PERMUTATIONS
         ]
 
 
 class TimestampLoader:
-    """Loads the selected timestamps from the ranking CSV, splitting them into blocks A/B/C."""
+    """Loads experiment timestamps partitioned into triples (blocks A..K).
 
-    def __init__(self, ranking_csv_path: Path) -> None:
-        """Read the ranking CSV and keep selected timestamps ordered by complexity rank."""
-        self._rows = self._read_selected(ranking_csv_path)
+    Each triple holds 3 consecutive timestamps of one random permutation (cyclically),
+    so every timestamp belongs to exactly 3 triples and triples never contain duplicates.
+    """
 
-    @staticmethod
-    def _read_selected(ranking_csv_path: Path) -> list[dict[str, str]]:
-        """Read selected=true rows sorted by rank."""
-        with open(ranking_csv_path, encoding="utf-8") as file:
-            rows = [row for row in csv.DictReader(file) if row["selected"] == "True"]
-        return sorted(rows, key=lambda row: int(row["rank"]))
+    def __init__(self, timestamps: list[str], rng: random.Random | None = None) -> None:
+        """Store the canonical timestamp list and the shuffled triple construction."""
+        if len(timestamps) != len(TimestampBlock):
+            raise SystemExit(
+                f"Expected {len(TimestampBlock)} timestamps (one per triple label), got {len(timestamps)}"
+            )
+        shuffled = list(timestamps)
+        (rng or random.Random(TRIPLE_SHUFFLE_SEED)).shuffle(shuffled)
+        self._shuffled = shuffled
 
-    def load(self, session: Session) -> list[ExperimentTimestamp]:
-        """Upsert timestamp rows; block is assigned round-robin by rank (balanced tiers)."""
+    def triples(self) -> dict[TimestampBlock, list[str]]:
+        """Map each block label to its 3 timestamp keys."""
+        n = len(self._shuffled)
+        return {
+            block: [self._shuffled[j % n], self._shuffled[(j + 1) % n], self._shuffled[(j + 2) % n]]
+            for j, block in enumerate(TimestampBlock)
+        }
+
+    def load(self, session: Session) -> None:
+        """Upsert timestamps and their triple memberships; idempotent (deterministic triples)."""
         existing = {ts.ts_key: ts for ts in session.exec(select(ExperimentTimestamp))}
-        result = []
-        for row in self._rows:
-            block = BLOCK_CYCLE[(int(row["rank"]) - 1) % len(BLOCK_CYCLE)]
-            ts = existing.get(row["timestamp"])
-            if ts is None:
-                ts = ExperimentTimestamp(ts_key=row["timestamp"], block=block)
-                session.add(ts)
-            else:
-                ts.block = block
-            result.append(ts)
-        return result
+        memberships = {
+            (member.block, member.timestamp_id)
+            for member in session.exec(select(TimestampBlockMember)).all()
+        }
+        for block, keys in self.triples().items():
+            for ts_key in keys:
+                ts = existing.get(ts_key)
+                if ts is None:
+                    ts = ExperimentTimestamp(ts_key=ts_key)
+                    session.add(ts)
+                    session.flush()
+                    existing[ts_key] = ts
+                if (block, ts.id) not in memberships:
+                    session.add(TimestampBlockMember(block=block, timestamp_id=ts.id))  # type: ignore[arg-type]
+                    memberships.add((block, ts.id))  # type: ignore[arg-type]
 
 
 def seed() -> None:
@@ -90,15 +98,19 @@ def seed() -> None:
         else:
             raise SystemExit(f"assignment_schemes in unexpected state: {scheme_count} rows, expected 0 or {EXPECTED_SCHEME_COUNT}")
 
-        timestamps = TimestampLoader(RANKING_CSV_PATH).load(session)
+        TimestampLoader(load_experiment_timestamps()).load(session)
         session.commit()
-        for ts in timestamps:
-            print(f"timestamp: {ts.ts_key} -> block {ts.block.value}")
+        memberships = session.exec(select(TimestampBlockMember)).all()
+        ts_keys = {ts.id: ts.ts_key for ts in session.exec(select(ExperimentTimestamp)).all()}
+        for member in memberships:
+            print(f"block {member.block.value}: {ts_keys[member.timestamp_id]}")
 
         counts = (
-            session.exec(select(ExperimentTimestamp.block, func.count()).group_by(ExperimentTimestamp.block)).all()
+            session.exec(
+                select(TimestampBlockMember.timestamp_id, func.count()).group_by(TimestampBlockMember.timestamp_id)
+            ).all()
         )
-        print("Block sizes:", {block.value: count for block, count in counts})
+        print("Triples per timestamp:", dict(counts))
 
 
 if __name__ == "__main__":

@@ -16,7 +16,6 @@ COPY backend/alembic/ ./alembic/
 COPY backend/alembic.ini .
 COPY backend/pyproject.toml .
 COPY backend/scripts/ ./scripts/
-COPY timestamp_selection/ranking.csv ./seed/ranking.csv
 
 # Install Python dependencies
 RUN pip install --no-cache-dir . && pip install --no-cache-dir \

@@ -32,11 +32,23 @@ class ExperimentCondition(StrEnum):
 
 
 class TimestampBlock(StrEnum):
-    """Latin square block of timestamps: A, B or C (3 timestamps per block)."""
+    """Label of a timestamp triple ("block"): 3 timestamps assigned together to a participant.
+
+    The experiment uses 11 blocks built over 11 timestamps so that each timestamp
+    belongs to exactly 3 blocks; the participant gets the least-used block at login.
+    """
 
     A = "A"
     B = "B"
     C = "C"
+    D = "D"
+    E = "E"
+    F = "F"
+    G = "G"
+    H = "H"
+    I = "I"
+    J = "J"
+    K = "K"
 
 
 class TrialStatus(StrEnum):

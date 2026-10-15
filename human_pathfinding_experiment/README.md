@@ -13,8 +13,8 @@ Requires `data/` and `config/` from the repository root and a `.env` with `POSTG
 docker compose up -d --build
 ```
 
-The backend container applies alembic migrations, seeds the latin-square schemes and the 9
-selected timestamps on startup, then serves the API.
+The backend container applies alembic migrations, seeds the condition-order schemes and the
+11 experiment timestamps (shuffled into 11 triples) on startup, then serves the API.
 
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8000

@@ -87,11 +87,12 @@ function findPointAtDistance(
 }
 
 /** Fixed demo scenarios shown by the secret ДЕМО button (nothing is stored in the database).
- *  Order: with forbidden zones -> without anything -> with forecast (same storm as the first one). */
+ *  Order: with forbidden zones -> without anything -> with forecast, same storm in all three. */
+const DEMO_TIMESTAMP = "2022_08_18_14_35_00";
 const DEMO_SCENARIOS = [
-  { condition: "C1" as const, obstacleMode: "hull" as const, windowSize: 1 as const, timestamp: "2023_08_05_13_10_00" },
-  { condition: "C0" as const, obstacleMode: "obstacles" as const, windowSize: 1 as const, timestamp: "2023_09_20_13_00_00" },
-  { condition: "C2" as const, obstacleMode: "hull" as const, windowSize: 7 as const, timestamp: "2023_08_05_13_10_00" },
+  { condition: "C1" as const, obstacleMode: "hull" as const, windowSize: 1 as const, timestamp: DEMO_TIMESTAMP },
+  { condition: "C0" as const, obstacleMode: "obstacles" as const, windowSize: 1 as const, timestamp: DEMO_TIMESTAMP },
+  { condition: "C2" as const, obstacleMode: "hull" as const, windowSize: 7 as const, timestamp: DEMO_TIMESTAMP },
 ];
 
 function experimentReducer(state: ExperimentState, action: ExperimentAction): ExperimentState {

@@ -66,17 +66,27 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("ts_key", sa.String(length=32), nullable=False),
         sa.Column("is_active", sa.Boolean(), server_default=sa.true(), nullable=False),
-        sa.Column("block", sa.Enum(TimestampBlock, native_enum=False, values_callable=lambda e: [m.value for m in e], length=2), nullable=False),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("ts_key", name="uq_timestamp_ts_key"),
     )
 
     op.create_table(
+        "timestamp_blocks",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column(
+            "block",
+            sa.Enum(TimestampBlock, native_enum=False, values_callable=lambda e: [m.value for m in e], length=2),
+            nullable=False,
+        ),
+        sa.Column("timestamp_id", sa.Integer(), nullable=False),
+        sa.ForeignKeyConstraint(["timestamp_id"], ["timestamps.id"], name="fk_block_timestamp"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("block", "timestamp_id", name="uq_block_timestamp"),
+    )
+
+    op.create_table(
         "assignment_schemes",
         sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("block_a_condition", _condition_type(), nullable=False),
-        sa.Column("block_b_condition", _condition_type(), nullable=False),
-        sa.Column("block_c_condition", _condition_type(), nullable=False),
         sa.Column("order_1", _condition_type(), nullable=False),
         sa.Column("order_2", _condition_type(), nullable=False),
         sa.Column("order_3", _condition_type(), nullable=False),
@@ -88,6 +98,11 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("participant_id", sa.Integer(), nullable=False),
         sa.Column("scheme_id", sa.Integer(), nullable=False),
+        sa.Column(
+            "block",
+            sa.Enum(TimestampBlock, native_enum=False, values_callable=lambda e: [m.value for m in e], length=2),
+            nullable=False,
+        ),
         sa.Column("assigned_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["participant_id"], ["participants.id"], name="fk_assignment_participant"),
         sa.ForeignKeyConstraint(["scheme_id"], ["assignment_schemes.id"], name="fk_assignment_scheme"),
@@ -122,5 +137,6 @@ def downgrade() -> None:
     op.drop_table("trials")
     op.drop_table("participant_assignment")
     op.drop_table("assignment_schemes")
+    op.drop_table("timestamp_blocks")
     op.drop_table("timestamps")
     op.drop_table("participants")
