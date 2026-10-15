@@ -7,6 +7,7 @@ interface ResultsSummaryProps {
   trialIndex: number;
   trialsTotal: number;
   isDemo: boolean;
+  isSandbox: boolean;
   submitting: boolean;
   error: string | null;
   onNext: () => void;
@@ -19,6 +20,7 @@ export function ResultsSummary({
   trialIndex,
   trialsTotal,
   isDemo,
+  isSandbox,
   submitting,
   error,
   onNext,
@@ -32,9 +34,11 @@ export function ResultsSummary({
       : `Некорректные участки: ${invalidSegments.join(", ")}`;
 
   const isLastTrial = trialIndex >= trialsTotal;
-  const nextLabel = isDemo
-    ? (isLastTrial ? "Вернуться ко входу" : "Следующий демо-сценарий")
-    : (isLastTrial ? "Перейти к опросу" : "Перейти к следующему эксперименту");
+  const nextLabel = isSandbox
+    ? "Выбрать другой сценарий"
+    : isDemo
+      ? (isLastTrial ? "Вернуться ко входу" : "Следующий демо-сценарий")
+      : (isLastTrial ? "Перейти к опросу" : "Перейти к следующему эксперименту");
 
   return (
     <div className={styles.container}>

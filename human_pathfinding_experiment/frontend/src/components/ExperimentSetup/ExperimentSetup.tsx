@@ -7,13 +7,15 @@ interface ExperimentSetupProps {
   condition: "C0" | "C1" | "C2" | null;
   timestamp: string | null;
   isDemo: boolean;
+  isSandbox: boolean;
   onStart: () => void;
 }
 
-export function ExperimentSetup({ trialIndex, trialsTotal, condition, timestamp, isDemo, onStart }: ExperimentSetupProps) {
+export function ExperimentSetup({ trialIndex, trialsTotal, condition, timestamp, isDemo, isSandbox, onStart }: ExperimentSetupProps) {
   return (
     <div className={styles.container}>
-      {isDemo && <div className={styles.demoBadge}>ДЕМО-режим — результаты не сохраняются</div>}
+      {isSandbox && <div className={styles.demoBadge}>Свободный тест — результаты не сохраняются</div>}
+      {isDemo && !isSandbox && <div className={styles.demoBadge}>ДЕМО-режим — результаты не сохраняются</div>}
       <div className={styles.row}>
         <span className={styles.attempt}>Сценарий {trialIndex} из {trialsTotal}</span>
       </div>

@@ -4,9 +4,10 @@ import styles from "./ParticipantLogin.module.css";
 interface ParticipantLoginProps {
   onLogin: (surname: string, name: string, group: string) => Promise<void>;
   onDemo: () => Promise<void>;
+  onSandbox: () => void;
 }
 
-export function ParticipantLogin({ onLogin, onDemo }: ParticipantLoginProps) {
+export function ParticipantLogin({ onLogin, onDemo, onSandbox }: ParticipantLoginProps) {
   const [surname, setSurname] = useState("");
   const [name, setName] = useState("");
   const [group, setGroup] = useState("");
@@ -88,6 +89,13 @@ export function ParticipantLogin({ onLogin, onDemo }: ParticipantLoginProps) {
         title="Демонстрационный режим: результаты не сохраняются"
       >
         {demoLoading ? "…" : "ДЕМО"}
+      </button>
+      <button
+        className={styles.sandboxButton}
+        onClick={onSandbox}
+        title="Свободный тест: любой timestamp и постановка, результаты не сохраняются"
+      >
+        ТЕСТ
       </button>
     </div>
   );

@@ -1,0 +1,124 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  gap: 12px;
+}
+
+.title {
+  margin: 0;
+  font-size: 28px;
+}
+
+.subtitle {
+  margin: 0 0 12px;
+  color: #aaaaaa;
+  font-size: 15px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 380px;
+  padding: 24px;
+  border: 1px solid #333333;
+  border-radius: 10px;
+  background: #111111;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 14px;
+  color: #cccccc;
+}
+
+.select {
+  padding: 10px 12px;
+  border: 1px solid #444444;
+  border-radius: 6px;
+  background: #000000;
+  color: #ffffff;
+  font-size: 14px;
+}
+
+.select:focus {
+  outline: none;
+  border-color: #888888;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.option {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid #333333;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.option:hover {
+  border-color: #666666;
+}
+
+.optionChecked {
+  border-color: #ffd700;
+}
+
+.optionCondition {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.optionDescription {
+  color: #aaaaaa;
+  font-size: 13px;
+}
+
+.error {
+  color: #ff5555;
+  font-size: 14px;
+}
+
+.submitButton {
+  margin-top: 6px;
+  padding: 12px;
+  border: none;
+  border-radius: 6px;
+  background: #b8860b;
+  color: #ffffff;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.submitButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.backButton {
+  background: transparent;
+  border: none;
+  color: #888888;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.backButton:hover {
+  color: #cccccc;
+}

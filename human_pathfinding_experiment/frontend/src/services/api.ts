@@ -6,6 +6,7 @@ import {
   ObstaclesResponse,
   QuestionnaireAnswers,
   SubmitTrialResponse,
+  TimestampsResponse,
   ValidationResponse,
 } from "../types";
 
@@ -46,6 +47,10 @@ export const api = {
 
   async startDemoSession(): Promise<{ token: string }> {
     return fetchJson<{ token: string }>(`${API_BASE}/participants/demo`, { method: "POST" });
+  },
+
+  async getTimestamps(): Promise<TimestampsResponse> {
+    return fetchJson<TimestampsResponse>(`${API_BASE}/timestamps`);
   },
 
   async getNextTrial(): Promise<NextTrialResponse> {

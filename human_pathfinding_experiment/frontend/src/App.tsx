@@ -4,13 +4,14 @@ import { ParticipantLogin } from "./components/ParticipantLogin";
 import { PathfindingCanvas } from "./components/Canvas";
 import { Questionnaire } from "./components/Questionnaire";
 import { Reminder } from "./components/Reminder";
+import { SandboxSetup } from "./components/SandboxSetup";
 import { StatusBar } from "./components/Controls";
 import { ResultsSummary } from "./components/Results";
 import { useExperiment } from "./hooks/useExperiment";
 import { useKeyboardControls } from "./hooks/useKeyboardControls";
 import "./App.css";
 
-type Screen = "login" | "brief" | "experiment" | "questionnaire" | "end";
+type Screen = "login" | "sandbox" | "brief" | "experiment" | "questionnaire" | "end";
 
 function App() {
   const [screen, setScreen] = useState<Screen>("login");
@@ -22,6 +23,7 @@ function App() {
     login,
     startDemo,
     nextDemoScenario,
+    startSandbox,
     loadNextTrial,
     startTrial,
     submitTrial,
@@ -59,12 +61,22 @@ function App() {
     setScreen("brief");
   }, [startDemo]);
 
+  const handleSandboxStart = useCallback(async (timestamp: string, condition: "C0" | "C1" | "C2") => {
+    await startSandbox(timestamp, condition);
+    setScreen("brief");
+  }, [startSandbox]);
+
   const handleStart = useCallback(async () => {
     await startTrial();
     setScreen("experiment");
   }, [startTrial]);
 
   const handleNext = useCallback(async () => {
+    if (state.isSandbox) {
+      // Free sandbox: back to the picker so another timestamp/condition can be tested
+      setScreen("sandbox");
+      return;
+    }
     if (state.isDemo) {
       // Demo session: nothing is submitted, just move to the next demo scenario
       if (nextDemoScenario()) {
@@ -91,7 +103,7 @@ function App() {
     } finally {
       setSubmitting(false);
     }
-  }, [state.isDemo, submitTrial, loadNextTrial, nextDemoScenario, clearSession]);
+  }, [state.isSandbox, state.isDemo, submitTrial, loadNextTrial, nextDemoScenario, clearSession]);
 
   const handleQuestionnaire = useCallback(async (answers: Parameters<typeof submitQuestionnaire>[0]) => {
     await submitQuestionnaire(answers);
@@ -110,7 +122,11 @@ function App() {
       </header>
 
       <main className="main">
-        {screen === "login" && <ParticipantLogin onLogin={handleLogin} onDemo={handleDemo} />}
+        {screen === "login" && <ParticipantLogin onLogin={handleLogin} onDemo={handleDemo} onSandbox={() => setScreen("sandbox")} />}
+
+        {screen === "sandbox" && (
+          <SandboxSetup onStart={handleSandboxStart} onBack={() => setScreen("login")} />
+        )}
 
         {screen === "brief" && (
           <>
@@ -120,6 +136,7 @@ function App() {
               condition={state.condition}
               timestamp={state.timestamp}
               isDemo={state.isDemo}
+              isSandbox={state.isSandbox}
               onStart={handleStart}
             />
             <Reminder />
@@ -171,6 +188,7 @@ function App() {
               trialIndex={state.trialIndex}
               trialsTotal={state.trialsTotal}
               isDemo={state.isDemo}
+              isSandbox={state.isSandbox}
               submitting={submitting}
               error={submitError}
               onNext={handleNext}

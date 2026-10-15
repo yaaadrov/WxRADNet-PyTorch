@@ -94,3 +94,23 @@
   color: #ffd700;
   border-color: #b8860b;
 }
+
+/* Second secret button: free sandbox picker, same subtle styling next to ДЕМО */
+.sandboxButton {
+  position: fixed;
+  bottom: 12px;
+  left: 76px;
+  padding: 4px 10px;
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  background: transparent;
+  color: #2a2a2a;
+  font-size: 12px;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+
+.sandboxButton:hover {
+  color: #ffd700;
+  border-color: #b8860b;
+}

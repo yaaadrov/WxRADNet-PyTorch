@@ -105,6 +105,9 @@ export interface ExperimentState {
   condition: "C0" | "C1" | "C2" | null;
   /** Demo session (secret button on the login screen): nothing is stored in the database. */
   isDemo: boolean;
+  /** Free sandbox session (second secret button): participant picks any timestamp and
+   *  condition, nothing is stored in the database. Implies isDemo. */
+  isSandbox: boolean;
   timestamp: string | null;
   obstacleMode: ObstacleMode;
   windowSize: WindowSize;
@@ -139,7 +142,7 @@ export interface ExperimentState {
 }
 
 export type ExperimentAction =
-  | { type: "SET_TRIAL"; payload: { trialId: number | null; trialIndex: number; trialsTotal: number; condition: "C0" | "C1" | "C2"; timestamp: string; obstacleMode: ObstacleMode; windowSize: WindowSize; isDemo: boolean } }
+  | { type: "SET_TRIAL"; payload: { trialId: number | null; trialIndex: number; trialsTotal: number; condition: "C0" | "C1" | "C2"; timestamp: string; obstacleMode: ObstacleMode; windowSize: WindowSize; isDemo: boolean; isSandbox: boolean } }
   | { type: "SET_AB_POINTS"; payload: { aPoint: Point2D; bPoint: Point2D } }
   | { type: "SET_BBOX"; payload: { pixelTransform: PixelTransform; allTimeKeys: string[] } }
   | { type: "SET_OBSTACLES"; payload: { obstacles: ObstacleLayer[]; availableTimeKeys: string[]; visibleArea: Array<Point2D> } }

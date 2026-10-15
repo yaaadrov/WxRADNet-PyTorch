@@ -8,6 +8,7 @@ import {
   QuestionnaireAnswers,
 } from "../types";
 import { SEGMENT_LENGTH_M, SNAP_DISTANCE_M } from "../utils/constants";
+import { conditionParams } from "../utils/conditions";
 import { distanceMeters, getDirection } from "../utils/geometry";
 
 const initialState: ExperimentState = {
@@ -16,6 +17,7 @@ const initialState: ExperimentState = {
   trialsTotal: 3,
   condition: null,
   isDemo: false,
+  isSandbox: false,
   timestamp: null,
   obstacleMode: "obstacles",
   windowSize: 1,
@@ -103,6 +105,7 @@ function experimentReducer(state: ExperimentState, action: ExperimentAction): Ex
         trialsTotal: action.payload.trialsTotal,
         condition: action.payload.condition,
         isDemo: action.payload.isDemo,
+        isSandbox: action.payload.isSandbox,
         timestamp: action.payload.timestamp,
         obstacleMode: action.payload.obstacleMode,
         windowSize: action.payload.windowSize,
@@ -380,6 +383,7 @@ export function useExperiment() {
         obstacleMode: trial.obstacle_mode,
         windowSize: trial.window_size,
         isDemo: false,
+        isSandbox: false,
       },
     });
   }, []);
@@ -394,16 +398,35 @@ export function useExperiment() {
     const data = await api.startDemoSession();
     setAuthToken(data.token);
     const scenario = DEMO_SCENARIOS[0];
-    dispatch({ type: "SET_TRIAL", payload: { ...scenario, trialId: null, trialIndex: 1, trialsTotal: DEMO_SCENARIOS.length, isDemo: true } });
+    dispatch({ type: "SET_TRIAL", payload: { ...scenario, trialId: null, trialIndex: 1, trialsTotal: DEMO_SCENARIOS.length, isDemo: true, isSandbox: false } });
   }, []);
 
   const nextDemoScenario = useCallback(() => {
     const index = state.trialIndex; // 1-based within the demo
     if (index >= DEMO_SCENARIOS.length) return false;
     const scenario = DEMO_SCENARIOS[index];
-    dispatch({ type: "SET_TRIAL", payload: { ...scenario, trialId: null, trialIndex: index + 1, trialsTotal: DEMO_SCENARIOS.length, isDemo: true } });
+    dispatch({ type: "SET_TRIAL", payload: { ...scenario, trialId: null, trialIndex: index + 1, trialsTotal: DEMO_SCENARIOS.length, isDemo: true, isSandbox: false } });
     return true;
   }, [state.trialIndex]);
+
+  const startSandbox = useCallback(async (timestamp: string, condition: "C0" | "C1" | "C2") => {
+    // Anonymous demo token: the sandbox never writes anything to the database
+    const data = await api.startDemoSession();
+    setAuthToken(data.token);
+    dispatch({
+      type: "SET_TRIAL",
+      payload: {
+        trialId: null,
+        trialIndex: 1,
+        trialsTotal: 1,
+        condition,
+        timestamp,
+        ...conditionParams(condition),
+        isDemo: true,
+        isSandbox: true,
+      },
+    });
+  }, []);
 
   const startTrial = useCallback(async () => {
     if (state.isDemo) {
@@ -515,6 +538,7 @@ export function useExperiment() {
     login,
     startDemo,
     nextDemoScenario,
+    startSandbox,
     loadNextTrial,
     startTrial,
     submitTrial,
