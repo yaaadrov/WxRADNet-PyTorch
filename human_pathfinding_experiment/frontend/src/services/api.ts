@@ -10,7 +10,9 @@ import {
   ValidationResponse,
 } from "../types";
 
-const API_BASE = "/api";
+// Absolute base URL when built for static hosts without an /api proxy (e.g. Cloudflare
+// Pages); falls back to the same-origin /api (Vercel rewrite, local dev, nginx)
+const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 
 // Session token is kept in memory only (a page reload requires a fresh login by design)
 let authToken: string | null = null;

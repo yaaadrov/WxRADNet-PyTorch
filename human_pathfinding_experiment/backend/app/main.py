@@ -13,6 +13,26 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Ensure results directory exists
     settings.results_path.mkdir(parents=True, exist_ok=True)
+
+    if settings.warm_cache:
+        # Preload all active timestamps (blocking, startup only): eliminates the one-time
+        # cold parse on the first request of every timestamp during the experiment
+        from sqlmodel import Session, select
+
+        from app.db.engine import engine
+        from app.db.models import ExperimentTimestamp
+        from app.services.data_service import warm_obstacle_cache
+
+        with Session(engine) as session:
+            keys = [
+                ts.ts_key
+                for ts in session.exec(
+                    select(ExperimentTimestamp).where(ExperimentTimestamp.is_active == True)  # noqa: E712
+                ).all()
+            ]
+        warmed = warm_obstacle_cache(keys)
+        print(f"warmed obstacle cache: {warmed}/{len(keys)} timestamps")
+
     yield
 
 

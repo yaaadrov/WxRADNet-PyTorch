@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     # start when the local copies are missing; empty disables the fetch (docker-compose mounts).
     data_archive_url: str = ""
 
+    # Preload all experiment timestamps into the obstacle cache at startup (needs RAM
+    # ~110 MB per timestamp; enable only on hosts with generous memory, e.g. HF Spaces)
+    warm_cache: bool = False
+
     # Session structure
     trials_per_participant: int = 3
 
